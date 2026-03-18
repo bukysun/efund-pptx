@@ -205,28 +205,23 @@ for shape in slide.shapes:
         pass
 ```
 
-### 风险提示页（读取 disclaimers/ 文件）
+### 免责声明（读取 disclaimers/ 文件）
+
+免责声明位于**封面页底部蓝色横幅**，固定文本，不得修改。
 
 ```python
 import os
 
 SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 
-def load_disclaimer(name: str) -> str:
-    """name: mutual_fund_cn / mutual_fund_en / private_fund_cn /
-             private_fund_en / annuity_cn / annuity_en /
-             non_product_cn / non_product_en"""
-    path = os.path.join(SKILL_DIR, "disclaimers", f"{name}.txt")
+def load_disclaimer(lang: str = "cn") -> str:
+    """lang: 'cn' → 中文版封面用, 'en' → 英文版封面用"""
+    path = os.path.join(SKILL_DIR, "disclaimers", f"disclaimer_{lang}.txt")
     with open(path, encoding="utf-8") as f:
         return f.read()
 
-slide = prs.slides.add_slide(prs.slide_layouts[2])
-for shape in slide.shapes:
-    try:
-        if shape.placeholder_format.idx == 10:
-            shape.text_frame.paragraphs[0].text = load_disclaimer("mutual_fund_cn")
-    except:
-        pass
+# 中文/中英文封面用中文声明，英文封面用英文声明
+disclaimer_text = load_disclaimer("cn")   # 或 load_disclaimer("en")
 ```
 
 ---
@@ -251,9 +246,19 @@ WHITE       = RGBColor(255, 255, 255)   # 目录主标题、表头字体
 
 | 元素 | 中文字体 | 英文/数字字体 | 字号 | 颜色 |
 |------|---------|-------------|------|------|
-| 封面大标题 | 华文黑体 | Arial | 28pt | DEEP_BLUE |
-| 封面副标题 | 华文黑体 加粗 | Arial 加粗 | 22pt | DEEP_BLUE |
-| 封面姓名/日期 | 华文黑体 | Arial | 14pt | DEEP_BLUE |
+| **[中文封面] 大标题** | 华文黑体 | — | 28pt | DEEP_BLUE |
+| **[中文封面] 副标题** | 华文黑体 加粗 | — | 22pt | DEEP_BLUE |
+| **[中文封面] 姓名/部门/日期** | 华文黑体 | Arial | 14pt | DEEP_BLUE |
+| **[中英文封面] 首行中文时-首行** | 华文黑体 | — | 28pt | DEEP_BLUE |
+| **[中英文封面] 首行中文时-第二行** | — | Arial 加粗 | 21pt | DEEP_BLUE |
+| **[中英文封面] 首行英文时-首行** | — | Arial | 28pt | DEEP_BLUE |
+| **[中英文封面] 首行英文时-第二行** | 华文黑体 加粗 | — | 22pt | DEEP_BLUE |
+| **[中英文封面] 中文在上姓名行** | 华文黑体 加粗 | Arial | 14pt / 12pt | DEEP_BLUE |
+| **[中英文封面] 英文在上姓名行** | 华文黑体 | Arial 加粗 | 12pt / 14pt | DEEP_BLUE |
+| **[中英文封面] 日期/地点(仅英文)** | — | Arial 加粗 | 12pt | DEEP_BLUE |
+| **[英文封面] 大标题** | — | Arial | 28pt（≥21pt） | DEEP_BLUE |
+| **[英文封面] 副标题** | — | Arial 加粗 | 21pt | DEEP_BLUE |
+| **[英文封面] 姓名/部门/日期** | — | Arial | 14pt | DEEP_BLUE |
 | 目录主标题 | 华文黑体 加粗 | — | 23pt | WHITE |
 | 目录序号 | — | Arial | 28pt | BRIGHT_BLUE |
 | 目录正文 | 华文黑体 | — | 18pt | DEEP_BLUE |
@@ -296,11 +301,9 @@ WHITE       = RGBColor(255, 255, 255)   # 目录主标题、表头字体
 - 内容居左，行高"中部对齐"
 - 禁止使用规定色系外颜色（如红色）
 
-**风险提示：** 对外使用时必须保留，不得删除。选择对应版本：
-- 公募基金产品推介 → `mutual_fund_cn/en`
-- 专户/养老金 → `private_fund_cn/en`
-- 年金 → `annuity_cn/en`
-- 非产品推介 → `non_product_cn/en`
+**免责声明：** 位于封面底部蓝色横幅，固定文本，不得删除、不得修改、底色不得修改。
+- 中文/中英文封面 → `disclaimers/disclaimer_cn.txt`
+- 英文封面 → `disclaimers/disclaimer_en.txt`
 
 ---
 
