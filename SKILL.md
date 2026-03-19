@@ -242,8 +242,6 @@ BODY_STYLES = {
     2: dict(size=10, bold=False, color=DARK_GRAY,  cn_font=CN_FONT, en_font=None),  # 二级文字
 }
 
-# 每个 level 的基础行高（字号 × 行距系数），单位 pt
-_BASE_LINE_H = {0: 15 * 1.4, 1: 12 * 1.6, 2: 10 * 1.6}
 # 内容区可用高度（ph idx=10, h=2.71"）
 CONTENT_HEIGHT_PT = 2.71 * 72  # ≈ 195 pt
 
@@ -292,31 +290,45 @@ def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT):
             ('全流程风险管理体系', 1),
         ])
     """
-    # 节标题（非首条）保留最小间距，即使内容区溢出也维持层次感
-    MIN_L0_SPC = 6.0   # pt
+    _MIN_L0_SPC = 6.0   # 节标题（非首条）最小段前间距，pt
+    _TARGET_LNS = {0: 140, 1: 160, 2: 160}   # 目标行距 %
+    _FONT_SZ    = {0: 15,  1: 12,  2: 10}    # 各 level 字号
 
-    total_base = sum(_BASE_LINE_H.get(lv, 19) for _, lv in items)
     n_l0_gaps  = sum(1 for i, (_, lv) in enumerate(items) if lv == 0 and i > 0)
-    # 预留最小间距后的剩余空间
-    remaining  = max(0.0, available_pt - total_base - n_l0_gaps * MIN_L0_SPC)
+    avail_text = available_pt - n_l0_gaps * _MIN_L0_SPC
 
-    # 权重：首条=0，一级标题=3，其余=1
+    # 计算行距缩放比例：优先保持目标行距，溢出时等比压缩到 100%（单倍）
+    base_target = sum(_FONT_SZ.get(lv,12) * _TARGET_LNS.get(lv,160)/100 for _,lv in items)
+    base_min    = sum(_FONT_SZ.get(lv,12)                                 for _,lv in items)
+
+    if base_target <= avail_text:
+        scale     = 1.0
+        remaining = avail_text - base_target
+    elif base_min <= avail_text:
+        scale     = avail_text / base_target   # 等比缩减，保底 100%
+        remaining = 0.0
+    else:
+        scale     = 100 / max(_TARGET_LNS.values())
+        remaining = 0.0
+
+    actual_lns = {lv: max(100, int(_TARGET_LNS[lv] * scale)) for lv in [0, 1, 2]}
+
+    # 剩余空间按权重分配段前间距（节标题权重 3，正文权重 1）
     weights = [0 if i == 0 else (3 if lv == 0 else 1)
                for i, (_, lv) in enumerate(items)]
     total_w = sum(weights)
     unit    = remaining / total_w if total_w > 0 else 0
 
     for i, (text, level) in enumerate(items):
-        para       = add_text(tf, text, first=(i == 0),
-                              **BODY_STYLES.get(level, BODY_STYLES[1]))
+        para = add_text(tf, text, first=(i == 0),
+                        **BODY_STYLES.get(level, BODY_STYLES[1]))
         if i == 0:
             spc_before = 0.0
         elif level == 0:
-            spc_before = MIN_L0_SPC + min(20.0 - MIN_L0_SPC, 3 * unit)
+            spc_before = _MIN_L0_SPC + min(20.0 - _MIN_L0_SPC, 3 * unit)
         else:
             spc_before = min(20.0, unit)
-        line_spc   = {0: 140, 1: 160, 2: 160}.get(level, 160)
-        _set_para_spacing(para, spc_before_pt=spc_before, line_spc_pct=line_spc)
+        _set_para_spacing(para, spc_before_pt=spc_before, line_spc_pct=actual_lns[level])
 ```
 
 ### 正文页（Layout 2 纯文字）
