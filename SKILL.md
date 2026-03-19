@@ -15,12 +15,22 @@ Disclaimers: `disclaimers/`
 
 ```python
 from pptx import Presentation
-import shutil, os
+import copy, os
 
 SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE   = os.path.join(SKILL_DIR, "assets/template.pptx")
 
 prs = Presentation(TEMPLATE)
+
+# ⚠️ 目录页的表格不在 layout 中，必须在删除 slides 之前先提取 XML
+toc_table_xml = None
+for slide in prs.slides:
+    if slide.slide_layout.name == '中文目录页，仅供目录页使用':
+        for shape in slide.shapes:
+            if shape.shape_type == 19:            # TABLE
+                toc_table_xml = copy.deepcopy(shape._element)
+                break
+        break
 
 # ALWAYS delete all existing slides first
 while len(prs.slides) > 0:
@@ -218,17 +228,90 @@ for shape in slide.shapes:
 
 ### 目录页
 
-```python
-slide = prs.slides.add_slide(prs.slide_layouts[1])
+> **⚠️ 目录表格不在 layout 中，需从模板幻灯片克隆。**
+> 必须在删除所有 slides 之前先提取 `toc_table_xml`（见 Quick Start）。
+> 表格结构：7行×2列，col0=序号（Arial 28pt 亮蓝），col1=标题（华文黑体 18pt）。
 
-# 目录内容写入页面内已有的 TABLE shape
-for shape in slide.shapes:
-    from pptx.enum.shapes import MSO_SHAPE_TYPE
-    if shape.shape_type == 19:  # TABLE
-        table = shape.table
-        # 根据实际目录项数填写表格单元格
-        # table.cell(row, col).text = "..."
-        break
+```python
+from pptx.oxml.ns import qn
+from lxml import etree
+import copy
+
+
+def fill_toc_table(tbl, chapters: list[str], active_idx: int):
+    """
+    填写目录表格内容，高亮当前章节，灰化其余章节。
+
+    Args:
+        tbl        : shape.table 对象
+        chapters   : 章节标题列表，最多 7 项
+        active_idx : 当前章节的 0-based 索引（显示为 DEEP_BLUE，其余灰化）
+    """
+    for ri in range(len(tbl.rows)):
+        # ── Col 0：更新序号文字 ──────────────────────────────────
+        num_cell = tbl.cell(ri, 0)
+        if ri < len(chapters):
+            for para in num_cell.text_frame.paragraphs:
+                for run in para.runs:
+                    run.text = f'{ri + 1:02d}.'
+
+        # ── Col 1：更新标题文字 + 颜色 ──────────────────────────
+        title_cell  = tbl.cell(ri, 1)
+        title_text  = chapters[ri] if ri < len(chapters) else ''
+        color_hex   = '005096' if ri == active_idx else 'CCCCCC'
+
+        for para in title_cell.text_frame.paragraphs:
+            for run in para.runs:
+                run.text = title_text
+
+                # 替换 solidFill 颜色
+                rPr = run._r.get_or_add_rPr()
+                old_fill = rPr.find(qn('a:solidFill'))
+                if old_fill is not None:
+                    rPr.remove(old_fill)
+                new_fill = etree.SubElement(rPr, qn('a:solidFill'))
+                srgb = etree.SubElement(new_fill, qn('a:srgbClr'))
+                srgb.set('val', color_hex)
+
+
+def add_toc_slide(prs, toc_table_xml, chapters: list[str], active_idx: int):
+    """
+    添加目录页：克隆模板表格 XML → 填入内容 → 返回 slide。
+
+    Args:
+        prs           : Presentation 对象
+        toc_table_xml : Quick Start 阶段提取的 deepcopy XML 元素
+        chapters      : 章节标题列表（最多 7 项）
+        active_idx    : 当前高亮章节的 0-based 索引
+    """
+    slide = prs.slides.add_slide(prs.slide_layouts[1])
+
+    # 将克隆的表格 XML 挂到 slide 的 shape tree
+    cloned = copy.deepcopy(toc_table_xml)
+    slide.shapes._spTree.append(cloned)
+
+    # 找到刚插入的表格并填写内容
+    for shape in slide.shapes:
+        if shape.shape_type == 19:
+            fill_toc_table(shape.table, chapters, active_idx)
+            break
+
+    return slide
+
+
+# ── 示例调用 ────────────────────────────────────────────────
+chapters = [
+    "公司介绍",
+    "投资策略",
+    "产品线概览",
+    "风险管理",
+    "业绩回顾",
+    "展望与规划",
+    "风险提示及免责声明",
+]
+
+# 在"投资策略"这一章时，active_idx=1（第2章高亮，其余灰化）
+toc_slide = add_toc_slide(prs, toc_table_xml, chapters, active_idx=1)
 ```
 
 ### 封底页
