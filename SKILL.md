@@ -81,11 +81,25 @@ prs.save("output.pptx")
 
 > 此布局无 TITLE 占位符，页面标题通过母版中 TITLE 形状呈现（位于 y=0.23"）。
 
-### Layout 3 / 4 — 图形内容
+### Layout 3 — 图形内容1（左文右图）
 | ph idx | Type | Position | Use |
 |--------|------|----------|-----|
 | 0 | TITLE(1) | y=0.23" | 幻灯片标题 |
-| 10 | OBJECT(7) | y=1.42", w=4.88" | 左侧文字/内容区 |
+| 10 | OBJECT(7) | y=1.42", w=4.88" | 左侧文字区（add_body_content） |
+
+> 右侧图表区：x=5.40", y=1.36", w=4.34", h=2.71"，手动 add_chart / add_picture。
+
+### Layout 4 — 图形内容2（双图）
+| 区域 | Position | Use |
+|------|----------|-----|
+| 左图 | x=0.40", y=1.49", w=4.32", h=2.54" | 左侧图表 |
+| 右图 | x=4.71", y=1.52", w=4.34", h=2.44" | 右侧图表 |
+| 左小标题 | x=0.48", y=1.32" | 10pt DEEP_BLUE |
+| 右小标题 | x=5.08", y=1.32" | 10pt DEEP_BLUE |
+| 左数据来源 | x=0.40", y=3.86" | 7pt MID_GRAY |
+| 右数据来源 | x=5.57", y=3.82" | 7pt MID_GRAY |
+
+> ph idx=10 存在但实际不使用；所有内容通过 `add_layout4_slide()` 手动放置。
 
 ### Layout 5 — 结尾页（中文）
 | ph idx | Type | Position | Use |
@@ -384,6 +398,81 @@ for shape in slide.shapes:
 ```
 
 > **不要手动添加项目符号字符**，模板 master 已通过 level 自动处理缩进和符号。
+
+### 正文页（Layout 4 双图）
+
+Layout 4 不使用 ph idx=10，两个图表区域通过坐标手动放置。
+
+```python
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+
+# ── 坐标常量（来自模板实测值） ────────────────────────────────
+_L4_LEFT_CHART  = (Inches(0.40), Inches(1.49), Inches(4.32), Inches(2.54))
+_L4_RIGHT_CHART = (Inches(4.71), Inches(1.52), Inches(4.34), Inches(2.44))
+_L4_LEFT_LABEL  = (Inches(0.48), Inches(1.32), Inches(3.29), Inches(0.27))
+_L4_RIGHT_LABEL = (Inches(5.08), Inches(1.32), Inches(3.29), Inches(0.27))
+_L4_LEFT_CAP    = (Inches(0.40), Inches(3.86), Inches(4.05), Inches(0.22))
+_L4_RIGHT_CAP   = (Inches(5.57), Inches(3.82), Inches(4.05), Inches(0.22))
+
+
+def _add_textbox(slide, ltwh, text, size, bold=False, color=DARK_GRAY, cn_font=CN_FONT):
+    l, t, w, h = ltwh
+    txb = slide.shapes.add_textbox(l, t, w, h)
+    add_text(txb.text_frame, text, first=True,
+             cn_font=cn_font, size=size, bold=bold, color=color)
+    return txb
+
+
+def add_layout4_slide(prs, title,
+                      left_label='', right_label='',
+                      left_caption='', right_caption=''):
+    """
+    添加 Layout 4（双图）幻灯片，返回 slide 和两个图表区域坐标。
+
+    Args:
+        prs           : Presentation 对象
+        title         : 幻灯片标题
+        left_label    : 左图小标题（图表上方，10pt DEEP_BLUE）
+        right_label   : 右图小标题
+        left_caption  : 左图数据来源（图表下方，7pt MID_GRAY）
+        right_caption : 右图数据来源
+
+    Returns:
+        slide         : 幻灯片对象
+        _L4_LEFT_CHART  : 左图区域 (l, t, w, h)，供 add_chart / add_picture 使用
+        _L4_RIGHT_CHART : 右图区域 (l, t, w, h)
+
+    Example:
+        from pptx.enum.chart import XL_CHART_TYPE
+        from pptx.chart.data import CategoryChartData
+
+        slide, l_area, r_area = add_layout4_slide(
+            prs, '规模与收益对比',
+            left_label='AUM增长趋势（亿元）',
+            right_label='年化收益率对比（%）',
+            left_caption='数据来源：公司季报',
+            right_caption='数据来源：Wind',
+        )
+
+        cd = CategoryChartData()
+        cd.categories = ['2021', '2022', '2023', '2024']
+        cd.add_series('规模', (15800, 17200, 18900, 21300))
+        chart = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, *l_area, cd).chart
+        chart.has_title = False
+        chart.series[0].format.fill.solid()
+        chart.series[0].format.fill.fore_color.rgb = DEEP_BLUE
+    """
+    slide = prs.slides.add_slide(prs.slide_layouts[4])
+    set_slide_title(slide, title)
+
+    if left_label:    _add_textbox(slide, _L4_LEFT_LABEL,  left_label,  10, color=DEEP_BLUE)
+    if right_label:   _add_textbox(slide, _L4_RIGHT_LABEL, right_label, 10, color=DEEP_BLUE)
+    if left_caption:  _add_textbox(slide, _L4_LEFT_CAP,    left_caption,  7, color=MID_GRAY)
+    if right_caption: _add_textbox(slide, _L4_RIGHT_CAP,   right_caption, 7, color=MID_GRAY)
+
+    return slide, _L4_LEFT_CHART, _L4_RIGHT_CHART
+```
 
 ### 目录页
 
