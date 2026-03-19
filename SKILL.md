@@ -153,14 +153,14 @@ for shape in slide.shapes:
 
     if idx == 1:
         # 大标题：华文黑体_易方达 28pt，DEEP_BLUE，靠左
-        add_text(tf, "易方达的历史和文化", first=True, size=28)
+        add_text(tf, "易方达的历史和文化", first=True, size=28, bold=False)
         # 副标题（可选）：华文黑体_易方达 加粗 22pt，DEEP_BLUE
         add_text(tf, "2024年新员工培训", size=22, bold=True)
 
     elif idx == 10:
         # 姓名行：华文黑体_易方达 14pt / 数字 Arial 14pt（apply_font 同时设两套字体）
-        add_text(tf, "汇报人：XXX", first=True, size=14)
-        add_text(tf, "2024年3月",   size=14)
+        add_text(tf, "汇报人：XXX", first=True, size=14, bold=False)
+        add_text(tf, "2024年3月",   size=14, bold=False)
 
 
 # ── 英文封面（布局 7，纯英文） ───────────────────────────────
@@ -175,15 +175,15 @@ for shape in slide.shapes:
     if idx == 1:
         # 大标题：Arial 28pt，DEEP_BLUE
         add_text(tf, "E Fund Annual Report 2024",
-                 first=True, cn_font=None, size=28)
+                 first=True, cn_font=None, en_font=EN_FONT, size=28, bold=False)
         # 副标题（可选）：Arial 加粗 21pt
         add_text(tf, "Strategic Overview",
-                 cn_font=None, size=21, bold=True)
+                 cn_font=None, en_font=EN_FONT, size=21, bold=True)
 
     elif idx == 10:
         # 姓名行：Arial 14pt（纯英文，cn_font=None）
-        add_text(tf, "Presenter: John Smith", first=True, cn_font=None, size=14)
-        add_text(tf, "March 2024, Shanghai",  cn_font=None, size=14)
+        add_text(tf, "Presenter: John Smith", first=True, cn_font=None, en_font=EN_FONT, size=14, bold=False)
+        add_text(tf, "March 2024, Shanghai",  cn_font=None, en_font=EN_FONT, size=14, bold=False)
 
 
 # ── 中英文封面（布局 7，首行中文） ──────────────────────────
@@ -197,17 +197,17 @@ for shape in slide.shapes:
 
     if idx == 1:
         # 首行中文标题：华文黑体_易方达 28pt
-        add_text(tf, "易方达年度报告 2024", first=True, size=28)
+        add_text(tf, "易方达年度报告 2024", first=True, size=28, bold=False)
         # 第二行英文副标题：Arial 加粗 21pt（cn_font=None 只设英文字体）
-        add_text(tf, "Annual Report", cn_font=None, size=21, bold=True)
+        add_text(tf, "Annual Report", cn_font=None, en_font=EN_FONT, size=21, bold=True)
 
     elif idx == 10:
-        # 中文在上：华文黑体_易方达 加粗 14pt
-        add_text(tf, "汇报人：XXX", first=True, size=14, bold=True)
+        # 姓名行：华文黑体_易方达 14pt
+        add_text(tf, "汇报人：XXX", first=True, size=14, bold=False)
         # 英文在下：Arial 12pt（cn_font=None）
-        add_text(tf, "Presenter: XXX", cn_font=None, size=12)
-        # 日期（仅英文）：Arial 加粗 12pt
-        add_text(tf, "March 2024", cn_font=None, size=12, bold=True)
+        add_text(tf, "Presenter: XXX", cn_font=None, en_font=EN_FONT, size=12, bold=False)
+        # 日期（仅英文）：Arial 12pt
+        add_text(tf, "March 2024", cn_font=None, en_font=EN_FONT, size=12, bold=False)
 ```
 
 ### 正文页工具函数
@@ -872,6 +872,7 @@ def add_text(tf, text, *, first=False, align=PP_ALIGN.LEFT,
 ## Key Rules (Summary)
 
 **封面：**
+- 非副标题文字必须显式传 `bold=False`，否则会继承 layout placeholder 的默认加粗样式
 - 所有文字靠左对齐，只能在设定文本框内编辑
 - 免责声明底色、Logo 底色不得修改；封面图片不得替换
 - 合作方 Logo 放在标题与日期之间，第一个与标题左侧对齐，高度 ≤ 大标题字高
