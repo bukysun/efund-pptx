@@ -132,13 +132,13 @@ for shape in slide.shapes:
     tf  = shape.text_frame
 
     if idx == 1:
-        # 大标题：华文黑体 28pt，DEEP_BLUE，靠左
+        # 大标题：华文黑体_易方达 28pt，DEEP_BLUE，靠左
         add_text(tf, "易方达的历史和文化", first=True, size=28)
-        # 副标题（可选）：华文黑体 加粗 22pt，DEEP_BLUE
+        # 副标题（可选）：华文黑体_易方达 加粗 22pt，DEEP_BLUE
         add_text(tf, "2024年新员工培训", size=22, bold=True)
 
     elif idx == 10:
-        # 姓名行：华文黑体 14pt / 数字 Arial 14pt（apply_font 同时设两套字体）
+        # 姓名行：华文黑体_易方达 14pt / 数字 Arial 14pt（apply_font 同时设两套字体）
         add_text(tf, "汇报人：XXX", first=True, size=14)
         add_text(tf, "2024年3月",   size=14)
 
@@ -176,13 +176,13 @@ for shape in slide.shapes:
     tf  = shape.text_frame
 
     if idx == 1:
-        # 首行中文标题：华文黑体 28pt
+        # 首行中文标题：华文黑体_易方达 28pt
         add_text(tf, "易方达年度报告 2024", first=True, size=28)
         # 第二行英文副标题：Arial 加粗 21pt（cn_font=None 只设英文字体）
         add_text(tf, "Annual Report", cn_font=None, size=21, bold=True)
 
     elif idx == 10:
-        # 中文在上：华文黑体 加粗 14pt
+        # 中文在上：华文黑体_易方达 加粗 14pt
         add_text(tf, "汇报人：XXX", first=True, size=14, bold=True)
         # 英文在下：Arial 12pt（cn_font=None）
         add_text(tf, "Presenter: XXX", cn_font=None, size=12)
@@ -204,21 +204,26 @@ _TITLE_SP_XML = '''<p:sp
     <p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>
     <p:nvPr><p:ph type="title"/></p:nvPr>
   </p:nvSpPr>
-  <p:spPr/>
+  <p:spPr>
+    <a:xfrm><a:off x="323850" y="211138"/><a:ext cx="8382375" cy="268287"/></a:xfrm>
+  </p:spPr>
   <p:txBody>
     <a:bodyPr/><a:lstStyle/>
     <a:p><a:r><a:t></a:t></a:r></a:p>
   </p:txBody>
 </p:sp>'''
+# ⚠️ 必须包含显式 <a:xfrm> 坐标；否则会继承 master 的窄标题框（约 2" 宽），导致文字被截断
 
 
-def set_slide_title(slide, text, size=15, bold=True, color=DEEP_BLUE):
+def set_slide_title(slide, text, size=23, bold=True, color=WHITE):
     """
     为任意布局设置标题，自动处理 Layout 2 无 title placeholder 的问题。
 
     Layout 3/4 直接写 ph idx=0；
     Layout 2 的标题继承自 slide master，新建幻灯片时不存在于 slide XML，
-    需注入一个 <p:sp type="title"> 元素后才能填写文字。
+    需注入一个带坐标的 <p:sp type="title"> 元素后才能填写文字。
+
+    默认样式：WHITE 23pt 加粗（标题位于顶部蓝色横幅内，必须用白色）。
     """
     title_shape = slide.shapes.title
     if title_shape is None:
@@ -226,14 +231,15 @@ def set_slide_title(slide, text, size=15, bold=True, color=DEEP_BLUE):
         title_shape = slide.shapes.title
     if title_shape:
         add_text(title_shape.text_frame, text, first=True,
+                 cn_font=CN_FONT, en_font=None,
                  size=size, bold=bold, color=color)
 
 
 # ── 多级正文 ─────────────────────────────────────────────────
 BODY_STYLES = {
-    0: dict(size=15, bold=True,  color=DEEP_BLUE),  # 一级标题
-    1: dict(size=12, bold=False, color=DARK_GRAY),   # 一级文字
-    2: dict(size=10, bold=False, color=DARK_GRAY),   # 二级文字
+    0: dict(size=15, bold=True,  color=DEEP_BLUE, cn_font=CN_FONT, en_font=None),  # 一级标题
+    1: dict(size=12, bold=False, color=DARK_GRAY,  cn_font=CN_FONT, en_font=None),  # 一级文字
+    2: dict(size=10, bold=False, color=DARK_GRAY,  cn_font=CN_FONT, en_font=None),  # 二级文字
 }
 
 
@@ -244,9 +250,9 @@ def add_body_content(tf, items):
     Args:
         tf    : shape.text_frame（ph idx=10 的文本框）
         items : list of (text, level) tuples
-                level 0 → 一级标题：华文黑体 加粗 15pt DEEP_BLUE
-                level 1 → 一级文字：华文黑体 12pt DARK_GRAY
-                level 2 → 二级文字：华文黑体 10pt DARK_GRAY
+                level 0 → 一级标题：华文黑体_易方达 加粗 15pt DEEP_BLUE
+                level 1 → 一级文字：华文黑体_易方达 12pt DARK_GRAY
+                level 2 → 二级文字：华文黑体_易方达 10pt DARK_GRAY
 
     Example:
         add_body_content(tf, [
@@ -320,7 +326,7 @@ for shape in slide.shapes:
 
 > **⚠️ 目录表格不在 layout 中，需从模板幻灯片克隆。**
 > 必须在删除所有 slides 之前先提取 `toc_table_xml`（见 Quick Start）。
-> 表格结构：7行×2列，col0=序号（Arial 28pt 亮蓝），col1=标题（华文黑体 18pt）。
+> 表格结构：7行×2列，col0=序号（Arial 28pt 亮蓝），col1=标题（华文黑体_易方达 18pt）。
 
 ```python
 from pptx.oxml.ns import qn
@@ -494,9 +500,9 @@ WHITE       = RGBColor(255, 255, 255)   # 目录主标题、表头字体
 
 ## Font Utils
 
-> ⚠️ **核心陷阱：`run.font.name` 只设置 Latin（西文）字体，不影响中文字符。**
-> 中文字符走的是 XML 中的 `a:ea`（East Asian）属性，必须单独写入，
-> 否则中文即使指定了"华文黑体"也会 fallback 到母版默认字体。
+> ⚠️ **核心陷阱：中文字体必须使用 `a:latin charset="-122"`，而非 `a:ea`。**
+> 模板中实际的中文 run 使用的是 `<a:latin typeface="华文黑体_易方达" charset="-122"/>`（GBK 字符集），
+> 用 `a:ea` 设置的字体在 PowerPoint 中不生效，中文会 fallback 到 Arial。
 
 ```python
 from pptx.util import Pt
@@ -505,17 +511,22 @@ from pptx.enum.text import PP_ALIGN
 from pptx.oxml.ns import qn
 from lxml import etree
 
-CN_FONT = "华文黑体"
+CN_FONT = "华文黑体_易方达"   # ⚠️ 公司定制字体，必须使用完整名称
 EN_FONT = "Arial"
 
 
 def apply_font(run, cn_font=CN_FONT, en_font=EN_FONT,
                size=None, bold=None, color=None):
     """
-    同时设置 Latin（西文/数字）与 East Asian（中文）两套字体。
+    设置中文/英文/混排字体。
 
-    python-pptx 的 run.font.name 只写 a:latin，中文字符需额外写 a:ea，
-    本函数统一处理，确保中英混排时字体正确。
+    ⚠️ 关键规则：中文字符必须通过 a:latin charset="-122"（GBK 中文字符集）设置，
+    这是模板 slide 中实际使用的方式。a:ea 字段不被 PowerPoint 识别为中文字体覆盖。
+
+    参数说明：
+        cn_font=CN_FONT, en_font=None  → 纯中文：a:latin charset=-122 + a:cs
+        cn_font=None, en_font=EN_FONT  → 纯英文/数字：a:latin（无 charset）
+        cn_font=CN_FONT, en_font=EN_FONT → 中英混排：a:latin=Arial + a:ea=华文黑体_易方达
 
     用法：
         run = para.add_run()
@@ -524,17 +535,34 @@ def apply_font(run, cn_font=CN_FONT, en_font=EN_FONT,
     """
     rPr = run._r.get_or_add_rPr()
 
-    if en_font:                                   # Latin：英文、数字
-        el = rPr.find(qn('a:latin'))
-        if el is None:
-            el = etree.SubElement(rPr, qn('a:latin'))
-        el.set('typeface', en_font)
+    if cn_font and not en_font:
+        # 纯中文：使用 a:latin charset="-122"（GBK），匹配模板 slide 的实际做法
+        latin = rPr.find(qn('a:latin'))
+        if latin is None:
+            latin = etree.SubElement(rPr, qn('a:latin'))
+        latin.set('typeface', cn_font)
+        latin.set('charset', '-122')
+        cs = rPr.find(qn('a:cs'))
+        if cs is None:
+            cs = etree.SubElement(rPr, qn('a:cs'))
+        cs.set('typeface', cn_font)
+        cs.set('charset', '-122')
 
-    if cn_font:                                   # East Asian：中文
-        el = rPr.find(qn('a:ea'))
-        if el is None:
-            el = etree.SubElement(rPr, qn('a:ea'))
-        el.set('typeface', cn_font)
+    elif en_font and not cn_font:
+        # 纯英文/数字
+        latin = rPr.find(qn('a:latin'))
+        if latin is None:
+            latin = etree.SubElement(rPr, qn('a:latin'))
+        latin.set('typeface', en_font)
+        latin.attrib.pop('charset', None)
+
+    elif cn_font and en_font:
+        # 中英混排：a:latin=Arial 处理英文数字，a:ea=华文黑体_易方达 处理中文
+        for tag, face in [('a:latin', en_font), ('a:ea', cn_font)]:
+            el = rPr.find(qn(tag))
+            if el is None:
+                el = etree.SubElement(rPr, qn(tag))
+            el.set('typeface', face)
 
     if size  is not None: run.font.size      = Pt(size)
     if bold  is not None: run.font.bold      = bold
@@ -574,32 +602,32 @@ def add_text(tf, text, *, first=False, align=PP_ALIGN.LEFT,
 
 | 元素 | 中文字体 | 英文/数字字体 | 字号 | 颜色 |
 |------|---------|-------------|------|------|
-| **[中文封面] 大标题** | 华文黑体 | — | 28pt | DEEP_BLUE |
-| **[中文封面] 副标题** | 华文黑体 加粗 | — | 22pt | DEEP_BLUE |
-| **[中文封面] 姓名/部门/日期** | 华文黑体 | Arial | 14pt | DEEP_BLUE |
-| **[中英文封面] 首行中文时-首行** | 华文黑体 | — | 28pt | DEEP_BLUE |
+| **[中文封面] 大标题** | 华文黑体_易方达 | — | 28pt | DEEP_BLUE |
+| **[中文封面] 副标题** | 华文黑体_易方达 加粗 | — | 22pt | DEEP_BLUE |
+| **[中文封面] 姓名/部门/日期** | 华文黑体_易方达 | Arial | 14pt | DEEP_BLUE |
+| **[中英文封面] 首行中文时-首行** | 华文黑体_易方达 | — | 28pt | DEEP_BLUE |
 | **[中英文封面] 首行中文时-第二行** | — | Arial 加粗 | 21pt | DEEP_BLUE |
 | **[中英文封面] 首行英文时-首行** | — | Arial | 28pt | DEEP_BLUE |
-| **[中英文封面] 首行英文时-第二行** | 华文黑体 加粗 | — | 22pt | DEEP_BLUE |
-| **[中英文封面] 中文在上姓名行** | 华文黑体 加粗 | Arial | 14pt / 12pt | DEEP_BLUE |
-| **[中英文封面] 英文在上姓名行** | 华文黑体 | Arial 加粗 | 12pt / 14pt | DEEP_BLUE |
+| **[中英文封面] 首行英文时-第二行** | 华文黑体_易方达 加粗 | — | 22pt | DEEP_BLUE |
+| **[中英文封面] 中文在上姓名行** | 华文黑体_易方达 加粗 | Arial | 14pt / 12pt | DEEP_BLUE |
+| **[中英文封面] 英文在上姓名行** | 华文黑体_易方达 | Arial 加粗 | 12pt / 14pt | DEEP_BLUE |
 | **[中英文封面] 日期/地点(仅英文)** | — | Arial 加粗 | 12pt | DEEP_BLUE |
 | **[英文封面] 大标题** | — | Arial | 28pt（≥21pt） | DEEP_BLUE |
 | **[英文封面] 副标题** | — | Arial 加粗 | 21pt | DEEP_BLUE |
 | **[英文封面] 姓名/部门/日期** | — | Arial | 14pt | DEEP_BLUE |
-| 目录主标题 | 华文黑体 加粗 | — | 23pt | WHITE |
+| 目录主标题 | 华文黑体_易方达 加粗 | — | 23pt | WHITE |
 | 目录序号 | — | Arial | 28pt | BRIGHT_BLUE |
-| 目录正文 | 华文黑体 | — | 18pt | DEEP_BLUE |
-| 正文（少量文字） | 华文黑体 | — | 15pt | DARK_GRAY |
-| 正文（大量文字） | 华文黑体 | — | 12pt | DARK_GRAY |
-| 内文一级标题 | 华文黑体 加粗 | — | 15pt | DEEP_BLUE |
-| 内文一级文字 | 华文黑体 | — | 12pt | DARK_GRAY |
-| 内文二级标题 | 华文黑体 加粗 | — | 12pt | DEEP_BLUE |
-| 内文二级文字 | 华文黑体 | — | 10pt | DARK_GRAY |
-| 图表标题 | 华文黑体 | — | 10pt | DEEP_BLUE |
-| 备注/数据来源 | 华文黑体 | Arial | 7pt | DARK_GRAY |
-| 表头文字 | 华文黑体 加粗 | — | 适当 | WHITE |
-| 封底答谢词 | 华文黑体 加粗 | — | 45pt | DEEP_BLUE |
+| 目录正文 | 华文黑体_易方达 | — | 18pt | DEEP_BLUE |
+| 正文（少量文字） | 华文黑体_易方达 | — | 15pt | DARK_GRAY |
+| 正文（大量文字） | 华文黑体_易方达 | — | 12pt | DARK_GRAY |
+| 内文一级标题 | 华文黑体_易方达 加粗 | — | 15pt | DEEP_BLUE |
+| 内文一级文字 | 华文黑体_易方达 | — | 12pt | DARK_GRAY |
+| 内文二级标题 | 华文黑体_易方达 加粗 | — | 12pt | DEEP_BLUE |
+| 内文二级文字 | 华文黑体_易方达 | — | 10pt | DARK_GRAY |
+| 图表标题 | 华文黑体_易方达 | — | 10pt | DEEP_BLUE |
+| 备注/数据来源 | 华文黑体_易方达 | Arial | 7pt | DARK_GRAY |
+| 表头文字 | 华文黑体_易方达 加粗 | — | 适当 | WHITE |
+| 封底答谢词 | 华文黑体_易方达 加粗 | — | 45pt | DEEP_BLUE |
 
 ---
 
