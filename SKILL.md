@@ -259,9 +259,12 @@ def _set_toc_row(tr, number: str, title: str, color_hex: str):
         old = rPr.find(qn('a:solidFill'))
         if old is not None:
             rPr.remove(old)
-        fill = etree.SubElement(rPr, qn('a:solidFill'))
+        # ⚠️ OOXML 要求 solidFill 必须在 latin/ea/cs 之前
+        # 用 insert(0,...) 而不是 SubElement（SubElement 追加到末尾会被 PowerPoint 忽略）
+        fill = etree.Element(qn('a:solidFill'))
         srgb = etree.SubElement(fill, qn('a:srgbClr'))
         srgb.set('val', color_hex)
+        rPr.insert(0, fill)
 
 
 def fill_toc_table(tbl, chapters: list[str], active_idx: int):
