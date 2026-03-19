@@ -1098,7 +1098,8 @@ def add_text(tf, text, *, first=False, align=PP_ALIGN.LEFT,
 - 表头：BRIGHT_BLUE 背景 + 白色加粗华文黑体，居中对齐
 - 正文：奇数行 PALE_GRAY / 偶数行白色交替，中部垂直对齐，内容左对齐
 - 数字/英文列传 `is_number=True` 使用 Arial 字体
-- 局部突出传 `bold=True` 或 `highlight=True`（PALE_GRAY 强制背景）
+- 局部突出优先用 `bold=True`；`highlight=True` 会**强制覆盖**为 PALE_GRAY，
+  会打破同行其他单元格的白底，通常不建议使用
 - 禁止使用规定色系外颜色（如红色）
 
 **免责声明：** 位于封面底部蓝色横幅，固定文本，不得删除、不得修改、底色不得修改。
