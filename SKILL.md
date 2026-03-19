@@ -413,6 +413,141 @@ def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT):
         _set_para_spacing(para, spc_before_pt=spc_before, line_spc_pct=actual_lns[level])
 ```
 
+### 表格工具函数
+
+```python
+def _rgb_hex(rgb: RGBColor) -> str:
+    """RGBColor → 6位十六进制字符串，用于 OOXML srgbClr val 属性。"""
+    return f'{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}'
+
+
+def _set_cell_fill(cell, rgb: RGBColor):
+    """设置单元格背景色（solidFill）。"""
+    tc = cell._tc
+    tcPr = tc.find(qn('a:tcPr'))
+    if tcPr is None:
+        tcPr = etree.SubElement(tc, qn('a:tcPr'))
+    for tag in [qn('a:solidFill'), qn('a:gradFill'), qn('a:noFill')]:
+        el = tcPr.find(tag)
+        if el is not None:
+            tcPr.remove(el)
+    solidFill = etree.SubElement(tcPr, qn('a:solidFill'))
+    etree.SubElement(solidFill, qn('a:srgbClr')).set('val', _rgb_hex(rgb))
+
+
+def _set_cell_valign(cell, anchor='ctr'):
+    """设置单元格垂直对齐。anchor: 't'=顶部, 'ctr'=中部, 'b'=底部"""
+    tc = cell._tc
+    tcPr = tc.find(qn('a:tcPr'))
+    if tcPr is None:
+        tcPr = etree.SubElement(tc, qn('a:tcPr'))
+    tcPr.set('anchor', anchor)
+
+
+def style_header_cell(cell, text, size=11):
+    """表头单元格：BRIGHT_BLUE 背景 + 白色加粗华文黑体 + 居中对齐。"""
+    _set_cell_fill(cell, BRIGHT_BLUE)
+    _set_cell_valign(cell, 'ctr')
+    add_text(cell.text_frame, text, first=True, align=PP_ALIGN.CENTER,
+             cn_font=CN_FONT, en_font=None, size=size, bold=True, color=WHITE)
+
+
+def style_body_cell(cell, text, size=10, align=PP_ALIGN.LEFT,
+                    is_number=False, bold=False, highlight=False, alt_row=False):
+    """
+    正文单元格样式。
+
+    Args:
+        is_number : True → Arial 字体（数字/英文内容）
+        bold      : True → 加粗突出
+        highlight : True → 强制 PALE_GRAY 背景（手动突出某行/某格）
+        alt_row   : True → 交替行 PALE_GRAY 背景，False → 白色背景
+    """
+    _set_cell_fill(cell, PALE_GRAY if (highlight or alt_row) else WHITE)
+    _set_cell_valign(cell, 'ctr')
+    add_text(cell.text_frame, text, first=True, align=align,
+             cn_font=CN_FONT if not is_number else None,
+             en_font=EN_FONT if is_number else None,
+             size=size, bold=bold, color=DARK_GRAY)
+
+
+def add_vi_table(slide, headers, rows_data,
+                 left=Inches(0.40), top=Inches(1.42),
+                 width=Inches(9.20), height=None,
+                 header_size=11, body_size=10,
+                 col_widths=None):
+    """
+    在 slide 上添加符合 VI 规范的表格。
+
+    Args:
+        slide       : 幻灯片对象
+        headers     : 表头列表，如 ['基金名称', '规模(亿)', '成立日期']
+        rows_data   : 二维列表，每行为若干单元格值。
+                      单元格可以是：
+                        - 字符串：默认样式（中文字体，左对齐，DARK_GRAY）
+                        - (text, dict)：dict 支持 is_number / bold / highlight / align
+        left/top    : 表格左上角坐标（默认贴内容区边界）
+        width       : 表格总宽度（默认填满内容区）
+        height      : 表格总高度（None → 按行数自动估算 0.38"/行）
+        header_size : 表头字号，默认 11pt
+        body_size   : 正文字号，默认 10pt
+        col_widths  : 各列宽度权重列表，如 [3, 1, 1]（不传则均分）
+
+    Returns:
+        table 对象
+
+    Example:
+        add_vi_table(slide,
+            headers=['基金公司', 'AUM（亿元）', '成立年份', '近三年收益'],
+            rows_data=[
+                ['易方达基金', ('21,300', dict(is_number=True)),
+                 ('2001', dict(is_number=True)),
+                 ('+38.2%', dict(is_number=True, bold=True))],
+                ['华夏基金',   ('18,500', dict(is_number=True)),
+                 ('1998', dict(is_number=True)),
+                 ('+31.6%', dict(is_number=True))],
+            ],
+            col_widths=[3, 2, 1.5, 2],
+        )
+    """
+    n_cols = len(headers)
+    n_rows = len(rows_data) + 1   # +1 表头行
+    auto_h = Inches(0.38) * n_rows if height is None else height
+    tbl = slide.shapes.add_table(n_rows, n_cols, left, top, width, auto_h).table
+
+    # 列宽分配
+    if col_widths:
+        total_w = sum(col_widths)
+        for ci, w in enumerate(col_widths):
+            tbl.columns[ci].width = int(width * w / total_w)
+    else:
+        unit_w = width // n_cols
+        for ci in range(n_cols):
+            tbl.columns[ci].width = unit_w
+
+    # 行高均分
+    row_h = auto_h // n_rows
+    for ri in range(n_rows):
+        tbl.rows[ri].height = row_h
+
+    # 表头行
+    for ci, hdr in enumerate(headers):
+        style_header_cell(tbl.cell(0, ci), hdr, size=header_size)
+
+    # 正文行（奇数行 PALE_GRAY，偶数行白色）
+    for ri, row in enumerate(rows_data):
+        alt = (ri % 2 == 1)
+        for ci, cell_val in enumerate(row):
+            if isinstance(cell_val, tuple):
+                text, kwargs = cell_val
+            else:
+                text, kwargs = str(cell_val), {}
+            style_body_cell(tbl.cell(ri + 1, ci), text,
+                            size=body_size, alt_row=alt, **kwargs)
+
+    return tbl
+```
+
 ### 正文页（Layout 2 纯文字）
 
 ```python
@@ -928,6 +1063,11 @@ def add_text(tf, text, *, first=False, align=PP_ALIGN.LEFT,
 | 备注/数据来源 | 华文黑体_易方达 | Arial | 7pt | DARK_GRAY |
 | 表头文字 | 华文黑体_易方达 加粗 | — | 适当 | WHITE |
 | 封底答谢词 | 华文黑体_易方达 加粗 | — | 45pt | DEEP_BLUE |
+| **表头文字** | 华文黑体_易方达 加粗 | — | 11pt（可调） | WHITE |
+| **表头背景** | — | — | — | BRIGHT_BLUE |
+| **表格正文（中文）** | 华文黑体_易方达 | — | 10pt（可调） | DARK_GRAY |
+| **表格正文（数字/英文）** | — | Arial | 10pt（可调） | DARK_GRAY |
+| **表格交替行背景** | — | — | — | PALE_GRAY / WHITE |
 
 ---
 
@@ -954,8 +1094,11 @@ def add_text(tf, text, *, first=False, align=PP_ALIGN.LEFT,
 - 模型图连接线 1.5 磅 MID_GRAY，内容框使用直角方框
 
 **表格：**
-- 表头背景 BRIGHT_BLUE + 白色加粗字
-- 内容居左，行高"中部对齐"
+- 使用 `add_vi_table(slide, headers, rows_data, ...)` 生成，自动处理颜色和字体
+- 表头：BRIGHT_BLUE 背景 + 白色加粗华文黑体，居中对齐
+- 正文：奇数行 PALE_GRAY / 偶数行白色交替，中部垂直对齐，内容左对齐
+- 数字/英文列传 `is_number=True` 使用 Arial 字体
+- 局部突出传 `bold=True` 或 `highlight=True`（PALE_GRAY 强制背景）
 - 禁止使用规定色系外颜色（如红色）
 
 **免责声明：** 位于封面底部蓝色横幅，固定文本，不得删除、不得修改、底色不得修改。
