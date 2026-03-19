@@ -242,17 +242,46 @@ BODY_STYLES = {
     2: dict(size=10, bold=False, color=DARK_GRAY,  cn_font=CN_FONT, en_font=None),  # 二级文字
 }
 
+# 每个 level 的基础行高（字号 × 行距系数），单位 pt
+_BASE_LINE_H = {0: 15 * 1.4, 1: 12 * 1.6, 2: 10 * 1.6}
+# 内容区可用高度（ph idx=10, h=2.71"）
+CONTENT_HEIGHT_PT = 2.71 * 72  # ≈ 195 pt
 
-def add_body_content(tf, items):
+
+def _set_para_spacing(para, spc_before_pt=None, line_spc_pct=None):
+    """设置段落间距（直接操作 XML）。
+    spc_before_pt : 段前距，单位 pt
+    line_spc_pct  : 行距百分比，如 160 = 160%
     """
-    填写多级正文内容。
+    pPr = para._p.get_or_add_pPr()
+    if line_spc_pct is not None:
+        lnSpc = pPr.find(qn('a:lnSpc'))
+        if lnSpc is None:
+            lnSpc = etree.SubElement(pPr, qn('a:lnSpc'))
+        lnSpc.clear()
+        etree.SubElement(lnSpc, qn('a:spcPct')).set('val', str(int(line_spc_pct * 1000)))
+    if spc_before_pt is not None:
+        spcBef = pPr.find(qn('a:spcBef'))
+        if spcBef is None:
+            spcBef = etree.SubElement(pPr, qn('a:spcBef'))
+        spcBef.clear()
+        etree.SubElement(spcBef, qn('a:spcPts')).set('val', str(int(spc_before_pt * 100)))
+
+
+def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT):
+    """
+    填写多级正文，段前空间动态分配：
+      - 计算所有条目基础行高之和
+      - 剩余空间按权重分配为段前间距：一级标题(非首条)权重3，其余权重1
+      - 内容多时间距自动压缩（最小0），内容少时均匀撑开（最大20pt）
 
     Args:
-        tf    : shape.text_frame（ph idx=10 的文本框）
-        items : list of (text, level) tuples
-                level 0 → 一级标题：华文黑体_易方达 加粗 15pt DEEP_BLUE
-                level 1 → 一级文字：华文黑体_易方达 12pt DARK_GRAY
-                level 2 → 二级文字：华文黑体_易方达 10pt DARK_GRAY
+        tf           : shape.text_frame（ph idx=10 的文本框）
+        items        : list of (text, level) tuples
+                       level 0 → 一级标题：华文黑体_易方达 加粗 15pt DEEP_BLUE
+                       level 1 → 一级文字：华文黑体_易方达 12pt DARK_GRAY
+                       level 2 → 二级文字：华文黑体_易方达 10pt DARK_GRAY
+        available_pt : 内容区高度（pt），默认 195pt（Layout 2/3/4 的 ph idx=10 高度）
 
     Example:
         add_body_content(tf, [
@@ -263,9 +292,21 @@ def add_body_content(tf, items):
             ('全流程风险管理体系', 1),
         ])
     """
+    total_base = sum(_BASE_LINE_H.get(lv, 19) for _, lv in items)
+    remaining  = max(0.0, available_pt - total_base)
+
+    # 权重：首条=0（无段前），一级标题=3，其余=1
+    weights = [0 if i == 0 else (3 if lv == 0 else 1)
+               for i, (_, lv) in enumerate(items)]
+    total_w = sum(weights)
+    unit    = remaining / total_w if total_w > 0 else 0
+
     for i, (text, level) in enumerate(items):
-        add_text(tf, text, first=(i == 0),
-                 **BODY_STYLES.get(level, BODY_STYLES[1]))
+        para       = add_text(tf, text, first=(i == 0),
+                              **BODY_STYLES.get(level, BODY_STYLES[1]))
+        spc_before = min(20.0, weights[i] * unit)
+        line_spc   = {0: 140, 1: 160, 2: 160}.get(level, 160)
+        _set_para_spacing(para, spc_before_pt=spc_before, line_spc_pct=line_spc)
 ```
 
 ### 正文页（Layout 2 纯文字）
