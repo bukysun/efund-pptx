@@ -112,25 +112,72 @@ prs.save("output.pptx")
 ### 封面页（中文/英文/中英文）
 
 ```python
-slide = prs.slides.add_slide(prs.slide_layouts[0])  # 或 layout[7]
+# ── 中文封面（布局 0） ──────────────────────────────────────
+slide = prs.slides.add_slide(prs.slide_layouts[0])
 
 for shape in slide.shapes:
     if not hasattr(shape, 'placeholder_format'):
         continue
-    try:
-        idx = shape.placeholder_format.idx
-    except:
-        continue
+    idx = shape.placeholder_format.idx
+    tf  = shape.text_frame
+
     if idx == 1:
-        tf = shape.text_frame
-        tf.paragraphs[0].text = "易方达的历史和文化"      # 大标题
-        p2 = tf.add_paragraph()
-        p2.text = "2024年新员工培训"                       # 副标题（可选）
+        # 大标题：华文黑体 28pt，DEEP_BLUE，靠左
+        add_text(tf, "易方达的历史和文化", first=True, size=28)
+        # 副标题（可选）：华文黑体 加粗 22pt，DEEP_BLUE
+        add_text(tf, "2024年新员工培训", size=22, bold=True)
+
     elif idx == 10:
-        tf = shape.text_frame
-        tf.paragraphs[0].text = "XXX（姓名）"
-        p2 = tf.add_paragraph()
-        p2.text = "2024年3月"
+        # 姓名行：华文黑体 14pt / 数字 Arial 14pt（apply_font 同时设两套字体）
+        add_text(tf, "汇报人：XXX", first=True, size=14)
+        add_text(tf, "2024年3月",   size=14)
+
+
+# ── 英文封面（布局 7，纯英文） ───────────────────────────────
+slide = prs.slides.add_slide(prs.slide_layouts[7])
+
+for shape in slide.shapes:
+    if not hasattr(shape, 'placeholder_format'):
+        continue
+    idx = shape.placeholder_format.idx
+    tf  = shape.text_frame
+
+    if idx == 1:
+        # 大标题：Arial 28pt，DEEP_BLUE
+        add_text(tf, "E Fund Annual Report 2024",
+                 first=True, cn_font=None, size=28)
+        # 副标题（可选）：Arial 加粗 21pt
+        add_text(tf, "Strategic Overview",
+                 cn_font=None, size=21, bold=True)
+
+    elif idx == 10:
+        # 姓名行：Arial 14pt（纯英文，cn_font=None）
+        add_text(tf, "Presenter: John Smith", first=True, cn_font=None, size=14)
+        add_text(tf, "March 2024, Shanghai",  cn_font=None, size=14)
+
+
+# ── 中英文封面（布局 7，首行中文） ──────────────────────────
+slide = prs.slides.add_slide(prs.slide_layouts[7])
+
+for shape in slide.shapes:
+    if not hasattr(shape, 'placeholder_format'):
+        continue
+    idx = shape.placeholder_format.idx
+    tf  = shape.text_frame
+
+    if idx == 1:
+        # 首行中文标题：华文黑体 28pt
+        add_text(tf, "易方达年度报告 2024", first=True, size=28)
+        # 第二行英文副标题：Arial 加粗 21pt（cn_font=None 只设英文字体）
+        add_text(tf, "Annual Report", cn_font=None, size=21, bold=True)
+
+    elif idx == 10:
+        # 中文在上：华文黑体 加粗 14pt
+        add_text(tf, "汇报人：XXX", first=True, size=14, bold=True)
+        # 英文在下：Arial 12pt（cn_font=None）
+        add_text(tf, "Presenter: XXX", cn_font=None, size=12)
+        # 日期（仅英文）：Arial 加粗 12pt
+        add_text(tf, "March 2024", cn_font=None, size=12, bold=True)
 ```
 
 ### 正文页（有内文标题）
@@ -238,6 +285,84 @@ MID_GRAY    = RGBColor(150, 150, 150)   # 连接线
 LIGHT_GRAY  = RGBColor(204, 204, 204)   # 虚线、网格、灰化目录项
 PALE_GRAY   = RGBColor(242, 242, 242)   # 表格背景
 WHITE       = RGBColor(255, 255, 255)   # 目录主标题、表头字体
+```
+
+---
+
+## Font Utils
+
+> ⚠️ **核心陷阱：`run.font.name` 只设置 Latin（西文）字体，不影响中文字符。**
+> 中文字符走的是 XML 中的 `a:ea`（East Asian）属性，必须单独写入，
+> 否则中文即使指定了"华文黑体"也会 fallback 到母版默认字体。
+
+```python
+from pptx.util import Pt
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from pptx.oxml.ns import qn
+from lxml import etree
+
+CN_FONT = "华文黑体"
+EN_FONT = "Arial"
+
+
+def apply_font(run, cn_font=CN_FONT, en_font=EN_FONT,
+               size=None, bold=None, color=None):
+    """
+    同时设置 Latin（西文/数字）与 East Asian（中文）两套字体。
+
+    python-pptx 的 run.font.name 只写 a:latin，中文字符需额外写 a:ea，
+    本函数统一处理，确保中英混排时字体正确。
+
+    用法：
+        run = para.add_run()
+        run.text = "易方达 2024"
+        apply_font(run, size=28, bold=False, color=DEEP_BLUE)
+    """
+    rPr = run._r.get_or_add_rPr()
+
+    if en_font:                                   # Latin：英文、数字
+        el = rPr.find(qn('a:latin'))
+        if el is None:
+            el = etree.SubElement(rPr, qn('a:latin'))
+        el.set('typeface', en_font)
+
+    if cn_font:                                   # East Asian：中文
+        el = rPr.find(qn('a:ea'))
+        if el is None:
+            el = etree.SubElement(rPr, qn('a:ea'))
+        el.set('typeface', cn_font)
+
+    if size  is not None: run.font.size      = Pt(size)
+    if bold  is not None: run.font.bold      = bold
+    if color is not None: run.font.color.rgb = color
+
+
+def add_text(tf, text, *, first=False, align=PP_ALIGN.LEFT,
+             cn_font=CN_FONT, en_font=EN_FONT,
+             size=None, bold=None, color=DEEP_BLUE):
+    """
+    向 text_frame 追加一个段落并应用字体。
+
+    Args:
+        tf    : shape.text_frame
+        text  : 段落文字
+        first : True → 复用 tf.paragraphs[0]（清空已有内容），
+                False → 新增段落（默认）
+        align : 对齐方式，VI 规范默认靠左
+        color : 默认 DEEP_BLUE（R0,G80,B150），可覆盖
+    Returns:
+        para  : 设置完成的 paragraph 对象
+    """
+    para = tf.paragraphs[0] if first else tf.add_paragraph()
+    if first:
+        para.clear()
+    run = para.add_run()
+    run.text = text
+    apply_font(run, cn_font=cn_font, en_font=en_font,
+               size=size, bold=bold, color=color)
+    para.alignment = align
+    return para
 ```
 
 ---
