@@ -190,38 +190,128 @@ for shape in slide.shapes:
         add_text(tf, "March 2024", cn_font=None, size=12, bold=True)
 ```
 
-### 正文页（有内文标题）
+### 正文页工具函数
 
 ```python
-from pptx.util import Pt
-from pptx.dml.color import RGBColor
+from lxml import etree
 
+# ── Layout 2 无 title placeholder，需注入 ───────────────────
+_TITLE_SP_XML = '''<p:sp
+  xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:nvSpPr>
+    <p:cNvPr id="9999" name="TitleInjected"/>
+    <p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>
+    <p:nvPr><p:ph type="title"/></p:nvPr>
+  </p:nvSpPr>
+  <p:spPr/>
+  <p:txBody>
+    <a:bodyPr/><a:lstStyle/>
+    <a:p><a:r><a:t></a:t></a:r></a:p>
+  </p:txBody>
+</p:sp>'''
+
+
+def set_slide_title(slide, text, size=15, bold=True, color=DEEP_BLUE):
+    """
+    为任意布局设置标题，自动处理 Layout 2 无 title placeholder 的问题。
+
+    Layout 3/4 直接写 ph idx=0；
+    Layout 2 的标题继承自 slide master，新建幻灯片时不存在于 slide XML，
+    需注入一个 <p:sp type="title"> 元素后才能填写文字。
+    """
+    title_shape = slide.shapes.title
+    if title_shape is None:
+        slide.shapes._spTree.insert(2, etree.fromstring(_TITLE_SP_XML))
+        title_shape = slide.shapes.title
+    if title_shape:
+        add_text(title_shape.text_frame, text, first=True,
+                 size=size, bold=bold, color=color)
+
+
+# ── 多级正文 ─────────────────────────────────────────────────
+BODY_STYLES = {
+    0: dict(size=15, bold=True,  color=DEEP_BLUE),  # 一级标题
+    1: dict(size=12, bold=False, color=DARK_GRAY),   # 一级文字
+    2: dict(size=10, bold=False, color=DARK_GRAY),   # 二级文字
+}
+
+
+def add_body_content(tf, items):
+    """
+    填写多级正文内容。
+
+    Args:
+        tf    : shape.text_frame（ph idx=10 的文本框）
+        items : list of (text, level) tuples
+                level 0 → 一级标题：华文黑体 加粗 15pt DEEP_BLUE
+                level 1 → 一级文字：华文黑体 12pt DARK_GRAY
+                level 2 → 二级文字：华文黑体 10pt DARK_GRAY
+
+    Example:
+        add_body_content(tf, [
+            ('核心投资理念', 0),
+            ('客户至上：为客户提供有针对性的产品', 1),
+            ('价值导向，研究驱动', 1),
+            ('风险管理', 0),
+            ('全流程风险管理体系', 1),
+        ])
+    """
+    for i, (text, level) in enumerate(items):
+        add_text(tf, text, first=(i == 0),
+                 **BODY_STYLES.get(level, BODY_STYLES[1]))
+```
+
+### 正文页（Layout 2 纯文字）
+
+```python
 slide = prs.slides.add_slide(prs.slide_layouts[2])
 
-# 填写内容占位符（ph idx=10）
+set_slide_title(slide, '投资理念与策略框架')
+
 for shape in slide.shapes:
     try:
         if shape.placeholder_format.idx == 10:
-            tf = shape.text_frame
-            # 清空默认段落
-            for para in tf.paragraphs:
-                para.clear()
-
-            content = [
-                ("投资理念", 0),        # 一级标题，level=0
-                ("客户至上：提供专业解决方案", 1),  # 一级文字，level=1
-                ("风险管理", 0),
-                ("全流程风险管理", 1),
-            ]
-
-            tf.paragraphs[0].text  = content[0][0]
-            tf.paragraphs[0].level = content[0][1]
-            for text, level in content[1:]:
-                p = tf.add_paragraph()
-                p.text  = text
-                p.level = level
+            add_body_content(shape.text_frame, [
+                ('核心投资理念', 0),
+                ('客户至上：为客户提供有针对性的产品与专业解决方案', 1),
+                ('价值导向：以基本面研究驱动投资决策', 1),
+                ('风险管理', 0),
+                ('全流程风险管理，覆盖投前、投中、投后各环节', 1),
+                ('独立的风控团队，与投资团队形成制衡机制', 1),
+            ])
     except:
         pass
+```
+
+### 正文页（Layout 3 左文右图）
+
+```python
+from pptx.util import Inches
+
+slide = prs.slides.add_slide(prs.slide_layouts[3])
+
+# 标题（ph idx=0，正常设置）
+set_slide_title(slide, '资产管理规模增长')
+
+# 左侧文字（ph idx=10）
+for shape in slide.shapes:
+    try:
+        if shape.placeholder_format.idx == 10:
+            add_body_content(shape.text_frame, [
+                ('规模概况', 0),
+                ('截至2024年底，管理规模突破2万亿元', 1),
+                ('公募基金规模行业前三', 1),
+                ('主要产品线', 0),
+                ('权益类基金：占比约40%', 1),
+                ('固收类基金：占比约45%', 1),
+            ])
+    except:
+        pass
+
+# 右侧区域（x≈5.40"，w≈4.34"）：手动添加图表/图片/文本框
+# txBox = slide.shapes.add_textbox(Inches(5.4), Inches(1.42), Inches(4.34), Inches(2.71))
+# 或通过 slide.shapes.add_chart(...) / slide.shapes.add_picture(...) 添加
 ```
 
 > **不要手动添加项目符号字符**，模板 master 已通过 level 自动处理缩进和符号。
