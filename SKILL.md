@@ -292,10 +292,15 @@ def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT):
             ('全流程风险管理体系', 1),
         ])
     """
-    total_base = sum(_BASE_LINE_H.get(lv, 19) for _, lv in items)
-    remaining  = max(0.0, available_pt - total_base)
+    # 节标题（非首条）保留最小间距，即使内容区溢出也维持层次感
+    MIN_L0_SPC = 6.0   # pt
 
-    # 权重：首条=0（无段前），一级标题=3，其余=1
+    total_base = sum(_BASE_LINE_H.get(lv, 19) for _, lv in items)
+    n_l0_gaps  = sum(1 for i, (_, lv) in enumerate(items) if lv == 0 and i > 0)
+    # 预留最小间距后的剩余空间
+    remaining  = max(0.0, available_pt - total_base - n_l0_gaps * MIN_L0_SPC)
+
+    # 权重：首条=0，一级标题=3，其余=1
     weights = [0 if i == 0 else (3 if lv == 0 else 1)
                for i, (_, lv) in enumerate(items)]
     total_w = sum(weights)
@@ -304,7 +309,12 @@ def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT):
     for i, (text, level) in enumerate(items):
         para       = add_text(tf, text, first=(i == 0),
                               **BODY_STYLES.get(level, BODY_STYLES[1]))
-        spc_before = min(20.0, weights[i] * unit)
+        if i == 0:
+            spc_before = 0.0
+        elif level == 0:
+            spc_before = MIN_L0_SPC + min(20.0 - MIN_L0_SPC, 3 * unit)
+        else:
+            spc_before = min(20.0, unit)
         line_spc   = {0: 140, 1: 160, 2: 160}.get(level, 160)
         _set_para_spacing(para, spc_before_pt=spc_before, line_spc_pct=line_spc)
 ```
