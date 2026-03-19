@@ -16,5 +16,8 @@ slide-*.jpg
 slide-*.pdf
 *.pdf
 
+# Test samples (generated pptx demos, not tracked)
+test_samples/
+
 # Preview server
 .claude/
