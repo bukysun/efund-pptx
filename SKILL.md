@@ -238,40 +238,67 @@ from lxml import etree
 import copy
 
 
+def _set_toc_row(tr, number: str, title: str, color_hex: str):
+    """更新一行目录：序号文字 + 标题文字 + 标题颜色（操作原始 XML tr 元素）。"""
+    cells = tr.findall(qn('a:tc'))
+
+    # Col 0：序号
+    for rEl in cells[0].findall('.//' + qn('a:r')):
+        t = rEl.find(qn('a:t'))
+        if t is not None:
+            t.text = number
+
+    # Col 1：标题文字 + 颜色
+    for rEl in cells[1].findall('.//' + qn('a:r')):
+        t = rEl.find(qn('a:t'))
+        if t is not None:
+            t.text = title
+        rPr = rEl.find(qn('a:rPr'))
+        if rPr is None:
+            rPr = etree.SubElement(rEl, qn('a:rPr'))
+        old = rPr.find(qn('a:solidFill'))
+        if old is not None:
+            rPr.remove(old)
+        fill = etree.SubElement(rPr, qn('a:solidFill'))
+        srgb = etree.SubElement(fill, qn('a:srgbClr'))
+        srgb.set('val', color_hex)
+
+
 def fill_toc_table(tbl, chapters: list[str], active_idx: int):
     """
-    填写目录表格内容，高亮当前章节，灰化其余章节。
+    填写目录表格内容，自动调整行数，高亮当前章节，灰化其余章节。
 
     Args:
         tbl        : shape.table 对象
-        chapters   : 章节标题列表，最多 7 项
+        chapters   : 章节标题列表（任意长度，无上限）
         active_idx : 当前章节的 0-based 索引（显示为 DEEP_BLUE，其余灰化）
+
+    行数处理规则：
+        章节数 < 模板行数 → 删除多余行（不留空行）
+        章节数 > 模板行数 → 克隆最后一行样式向下扩展
     """
-    for ri in range(len(tbl.rows)):
-        # ── Col 0：更新序号文字 ──────────────────────────────────
-        num_cell = tbl.cell(ri, 0)
-        if ri < len(chapters):
-            for para in num_cell.text_frame.paragraphs:
-                for run in para.runs:
-                    run.text = f'{ri + 1:02d}.'
+    tbl_xml  = tbl._tbl
+    tr_list  = tbl_xml.findall(qn('a:tr'))
+    n_have   = len(tr_list)
+    n_need   = len(chapters)
 
-        # ── Col 1：更新标题文字 + 颜色 ──────────────────────────
-        title_cell  = tbl.cell(ri, 1)
-        title_text  = chapters[ri] if ri < len(chapters) else ''
-        color_hex   = '005096' if ri == active_idx else 'CCCCCC'
+    if n_need < n_have:
+        # 删除多余行
+        for tr in tr_list[n_need:]:
+            tbl_xml.remove(tr)
 
-        for para in title_cell.text_frame.paragraphs:
-            for run in para.runs:
-                run.text = title_text
+    elif n_need > n_have:
+        # 克隆最后一行，补足所需行数
+        style_row = tr_list[-1]
+        for _ in range(n_need - n_have):
+            tbl_xml.append(copy.deepcopy(style_row))
 
-                # 替换 solidFill 颜色
-                rPr = run._r.get_or_add_rPr()
-                old_fill = rPr.find(qn('a:solidFill'))
-                if old_fill is not None:
-                    rPr.remove(old_fill)
-                new_fill = etree.SubElement(rPr, qn('a:solidFill'))
-                srgb = etree.SubElement(new_fill, qn('a:srgbClr'))
-                srgb.set('val', color_hex)
+    # 重新获取（行数可能已变化）
+    tr_list = tbl_xml.findall(qn('a:tr'))
+
+    for ri, tr in enumerate(tr_list):
+        color_hex = '005096' if ri == active_idx else 'CCCCCC'
+        _set_toc_row(tr, f'{ri + 1:02d}.', chapters[ri], color_hex)
 
 
 def add_toc_slide(prs, toc_table_xml, chapters: list[str], active_idx: int):
