@@ -104,8 +104,14 @@ prs.save("output.pptx")
 ### Layout 5 — 结尾页（中文）
 | ph idx | Type | Position | Use |
 |--------|------|----------|-----|
-| 10 | OBJECT(7) | y=1.30" | 答谢词 |
-| 11 | BODY(2) | y=2.74" | 联系信息 |
+| 10 | OBJECT(7) | y=1.30", w=5.31" | 答谢词（45pt 加粗 DEEP_BLUE） |
+| 11 | BODY(2) | y=2.74", w=3.00" | 联系信息（12pt DEEP_BLUE 行距170%，可省略） |
+
+### Layout 6 — 结尾页（英文）
+| ph idx | Type | Position | Use |
+|--------|------|----------|-----|
+| 10 | OBJECT(7) | y=1.30", w=5.31" | 答谢词（Arial 45pt 加粗 DEEP_BLUE） |
+| 4294967295 | — | y=3.85", w=5.73" | 联系信息（Arial 12pt DEEP_BLUE 行距170%，可省略） |
 
 ### Layout 7 — 首页（英文/中英文封面）
 | ph idx | Type | Position | Use |
@@ -595,23 +601,103 @@ toc_slide = add_toc_slide(prs, toc_table_xml, chapters, active_idx=1)
 ### 封底页
 
 ```python
-slide = prs.slides.add_slide(prs.slide_layouts[5])  # 中文封底
+def add_cn_closing_slide(prs, thanks='谢谢', contacts=None):
+    """
+    添加中文封底（Layout 5）。
 
-for shape in slide.shapes:
-    try:
-        idx = shape.placeholder_format.idx
+    Args:
+        prs      : Presentation 对象
+        thanks   : 答谢词，华文黑体_易方达 45pt 加粗 DEEP_BLUE
+        contacts : 联系信息行列表（可选），华文黑体_易方达 12pt DEEP_BLUE 行距 170%
+                   如：['联系我们：', '张三   Tel：+86(20)8510-xxxx', 'Email：xxx@efunds.com.cn']
+
+    Returns:
+        slide
+    """
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+
+    for ph in slide.placeholders:
+        idx = ph.placeholder_format.idx
+        tf  = ph.text_frame
+        tf.word_wrap = True
+
         if idx == 10:
-            shape.text_frame.paragraphs[0].text = "谢谢"
-        elif idx == 11:
-            tf = shape.text_frame
-            tf.paragraphs[0].text = "联系我们："
-            p = tf.add_paragraph()
-            p.text = "XXX   Tel：+86(20)8510 ----"
-            p = tf.add_paragraph()
-            p.text = "        Email：XXX@efunds.com.cn"
-    except:
-        pass
+            para = add_text(tf, thanks, first=True,
+                            cn_font=CN_FONT, en_font=None,
+                            size=45, bold=True, color=DEEP_BLUE)
+            _set_para_spacing(para, line_spc_pct=100)
+
+        elif idx == 11 and contacts:
+            for i, line in enumerate(contacts):
+                para = add_text(tf, line, first=(i == 0),
+                                cn_font=CN_FONT, en_font=None,
+                                size=12, bold=False, color=DEEP_BLUE)
+                _set_para_spacing(para, line_spc_pct=170)
+
+    return slide
+
+
+def add_en_closing_slide(prs, thanks='Thank You', contacts=None):
+    """
+    添加英文封底（Layout 6）。
+
+    Args:
+        prs      : Presentation 对象
+        thanks   : 答谢词，Arial 45pt 加粗 DEEP_BLUE
+        contacts : 联系信息行列表（可选），Arial 12pt DEEP_BLUE 行距 170%
+
+    Returns:
+        slide
+    """
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+    for ph in slide.placeholders:
+        idx = ph.placeholder_format.idx
+        tf  = ph.text_frame
+        tf.word_wrap = True
+
+        if idx == 10:
+            para = add_text(tf, thanks, first=True,
+                            cn_font=None, en_font=EN_FONT,
+                            size=45, bold=True, color=DEEP_BLUE)
+            _set_para_spacing(para, line_spc_pct=100)
+
+        elif idx == 4294967295 and contacts:
+            for i, line in enumerate(contacts):
+                para = add_text(tf, line, first=(i == 0),
+                                cn_font=None, en_font=EN_FONT,
+                                size=12, bold=False, color=DEEP_BLUE)
+                _set_para_spacing(para, line_spc_pct=170)
+
+    return slide
+
+
+# ── 示例调用 ────────────────────────────────────────────────
+# 中文封底
+add_cn_closing_slide(prs,
+    thanks='谢谢',
+    contacts=[
+        '联系我们：',
+        '张三   Tel：+86(20)8510-xxxx',
+        'Email：investor@efunds.com.cn',
+    ]
+)
+
+# 英文封底
+add_en_closing_slide(prs,
+    thanks='Thank You',
+    contacts=[
+        'Contact us：',
+        'John Smith   Tel：+86(20)8510-xxxx',
+        'Email：investor@efunds.com.cn',
+    ]
+)
 ```
+
+**封底规范：**
+- 答谢词可根据实际需要修改，不得添加任何图片
+- 联系信息非必须，可省略 `contacts` 参数
+- 文字、颜色、位置不得擅自变动
 
 ### 免责声明（读取 disclaimers/ 文件）
 
