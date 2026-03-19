@@ -286,12 +286,56 @@ def _set_para_spacing(para, spc_before_pt=None, line_spc_pct=None):
         etree.SubElement(spcBef, qn('a:spcPts')).set('val', str(int(spc_before_pt * 100)))
 
 
+# 项目符号悬挂缩进（来自 ppt_template.pptx 实测值：4.8mm = 171450 EMU）
+_BULLET_INDENT_EMU = 171450
+
+
+def _set_para_bullet(para, enabled=True, level=1):
+    """
+    为段落设置/取消项目符号（黑色小圆点 •，Arial 字体，100% 字高）。
+
+    enabled=True  → 添加 •，按 level 设置悬挂缩进（hanging indent）
+    enabled=False → 显式置 buNone（一级标题/无符号段落）
+
+    缩进规则（来自 ppt_template.pptx 实测）：
+      level 1: marL=171450 EMU (4.8mm), indent=-171450 EMU（悬挂）
+      level 2: marL=342900 EMU (9.5mm), indent=-171450 EMU（悬挂，更深缩进）
+    """
+    pPr = para._p.get_or_add_pPr()
+
+    # 清除已有 bullet 相关子元素
+    for tag in [qn('a:buNone'), qn('a:buChar'), qn('a:buAutoNum'),
+                qn('a:buFont'), qn('a:buSzPct')]:
+        el = pPr.find(tag)
+        if el is not None:
+            pPr.remove(el)
+
+    if not enabled:
+        etree.SubElement(pPr, qn('a:buNone'))
+        pPr.attrib.pop('marL', None)
+        pPr.attrib.pop('indent', None)
+        return
+
+    # 悬挂缩进：文字左边距 = level * 4.8mm，bullet 向左突出 4.8mm
+    pPr.set('marL', str(_BULLET_INDENT_EMU * level))
+    pPr.set('indent', str(-_BULLET_INDENT_EMU))
+
+    buFont = etree.SubElement(pPr, qn('a:buFont'))
+    buFont.set('typeface', 'Arial')
+
+    buSzPct = etree.SubElement(pPr, qn('a:buSzPct'))
+    buSzPct.set('val', '100000')   # 100% 字高
+
+    buChar = etree.SubElement(pPr, qn('a:buChar'))
+    buChar.set('char', '•')
+
+
 def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT):
     """
-    填写多级正文，段前空间动态分配：
-      - 计算所有条目基础行高之和
-      - 剩余空间按权重分配为段前间距：一级标题(非首条)权重3，其余权重1
-      - 内容多时间距自动压缩（最小0），内容少时均匀撑开（最大20pt）
+    填写多级正文，段前空间两步动态分配：
+      1. 节标题（level 0，非首条）：基础 _MIN_L0_SPC + 额外量（上限 14pt），确保视觉分节感
+      2. 正文/二级条目：剩余空间均分，使内容区垂直方向充分填满（上限 20pt）
+      内容多时行距自动等比压缩至 100%（单倍）保底。
 
     Args:
         tf           : shape.text_frame（ph idx=10 的文本框）
@@ -333,21 +377,39 @@ def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT):
 
     actual_lns = {lv: max(100, int(_TARGET_LNS[lv] * scale)) for lv in [0, 1, 2]}
 
-    # 剩余空间按权重分配段前间距（节标题权重 3，正文权重 1）
-    weights = [0 if i == 0 else (3 if lv == 0 else 1)
-               for i, (_, lv) in enumerate(items)]
-    total_w = sum(weights)
-    unit    = remaining / total_w if total_w > 0 else 0
+    # 两步空间分配，避免节标题上限截断后空间浪费：
+    #   第一步：节标题额外间距（_MIN_L0_SPC 已预留，此处分配上限内的额外量）
+    #   第二步：剩余空间均分给正文/二级条目
+    _MAX_L0_EXTRA = 20.0 - _MIN_L0_SPC   # 节标题额外部分上限 14pt
+    _MAX_OTHER    = 20.0                   # 正文条目段前间距上限
+    n_other_gaps  = sum(1 for idx, (_, lv) in enumerate(items) if idx > 0 and lv != 0)
+
+    if n_l0_gaps > 0 and remaining > 0:
+        # 用加权估算节标题应得额外量，再与上限取小
+        total_w   = 3 * n_l0_gaps + n_other_gaps
+        unit_init = remaining / total_w
+        l0_extra  = min(_MAX_L0_EXTRA, 3 * unit_init)
+    else:
+        l0_extra = 0.0
+
+    other_budget = remaining - n_l0_gaps * l0_extra
+    unit_other   = (other_budget / n_other_gaps) if n_other_gaps > 0 else 0.0
+    unit_other   = min(_MAX_OTHER, unit_other)
 
     for i, (text, level) in enumerate(items):
         para = add_text(tf, text, first=(i == 0),
                         **BODY_STYLES.get(level, BODY_STYLES[1]))
+        # 项目符号：一级标题无符号，正文/二级文字加 •（悬挂缩进）
+        if level == 0:
+            _set_para_bullet(para, enabled=False)
+        else:
+            _set_para_bullet(para, enabled=True, level=level)
         if i == 0:
             spc_before = 0.0
         elif level == 0:
-            spc_before = _MIN_L0_SPC + min(20.0 - _MIN_L0_SPC, 3 * unit)
+            spc_before = _MIN_L0_SPC + l0_extra
         else:
-            spc_before = min(20.0, unit)
+            spc_before = unit_other
         _set_para_spacing(para, spc_before_pt=spc_before, line_spc_pct=actual_lns[level])
 ```
 
@@ -403,7 +465,7 @@ for shape in slide.shapes:
 # 或通过 slide.shapes.add_chart(...) / slide.shapes.add_picture(...) 添加
 ```
 
-> **不要手动添加项目符号字符**，模板 master 已通过 level 自动处理缩进和符号。
+> **不要在文本字符串中手动嵌入 • 字符**；`add_body_content` 通过 `_set_para_bullet` 在 XML 层面添加项目符号（Arial •，悬挂缩进 4.8mm），level 0 标题显式设为 `buNone`。
 
 ### 正文页（Layout 4 双图）
 
