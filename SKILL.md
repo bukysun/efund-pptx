@@ -330,20 +330,28 @@ def _set_para_bullet(para, enabled=True, level=1):
     buChar.set('char', '•')
 
 
-def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT):
+def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT,
+                     available_width_pt=None):
     """
-    填写多级正文，段前空间两步动态分配：
-      1. 节标题（level 0，非首条）：基础 _MIN_L0_SPC + 额外量（上限 14pt），确保视觉分节感
-      2. 正文/二级条目：剩余空间均分，使内容区垂直方向充分填满（上限 20pt）
-      内容多时行距自动等比压缩至 100%（单倍）保底。
+    填写多级正文，段前空间动态分配，自动估算换行、强化 L0/L1 视觉层级。
+
+    分配逻辑：
+      1. 用 available_width_pt 估算各条目实际行数（换行会增大 base_target，压缩间距）
+      2. 节标题（level 0，非首条）：基础 _MIN_L0_SPC + 额外量（上限 24pt，总上限 30pt）
+      3. 正文/二级条目：剩余空间均分（上限 14pt）
+         → L0 间距始终约 2-3× L1 间距，保持清晰视觉层级
+      4. 内容多时行距自动等比压缩至 100%（单倍）保底
 
     Args:
-        tf           : shape.text_frame（ph idx=10 的文本框）
-        items        : list of (text, level) tuples
-                       level 0 → 一级标题：华文黑体_易方达 加粗 15pt DEEP_BLUE
-                       level 1 → 一级文字：华文黑体_易方达 12pt DARK_GRAY
-                       level 2 → 二级文字：华文黑体_易方达 10pt DARK_GRAY
-        available_pt : 内容区高度（pt），默认 195pt（Layout 2/3/4 的 ph idx=10 高度）
+        tf                 : shape.text_frame（ph idx=10 的文本框）
+        items              : list of (text, level) tuples
+                             level 0 → 一级标题：华文黑体_易方达 加粗 15pt DEEP_BLUE
+                             level 1 → 一级文字：华文黑体_易方达 12pt DARK_GRAY
+                             level 2 → 二级文字：华文黑体_易方达 10pt DARK_GRAY
+        available_pt       : 内容区高度（pt），默认 195pt（Layout 2/3 的 ph idx=10 高度）
+        available_width_pt : 内容区宽度（pt），用于估算长文本换行数，影响间距分配精度。
+                             通常不需手动传入；add_layout3_slide 会自动传入。
+                             Layout 2 ≈ 633pt，Layout 3 ≈ 352pt，None → 按单行计算。
 
     Example:
         add_body_content(tf, [
@@ -358,18 +366,33 @@ def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT):
     _TARGET_LNS = {0: 140, 1: 160, 2: 160}   # 目标行距 %
     _FONT_SZ    = {0: 15,  1: 12,  2: 10}    # 各 level 字号
 
+    # 先确定是否加 bullet（影响缩进宽度，进而影响换行估算）
+    n_body_items = sum(1 for _, lv in items if lv != 0)
+    use_bullet   = (n_body_items > 1)
+
+    def _est_lines(text, level):
+        """估算该段落在 available_width_pt 下的实际显示行数。"""
+        if available_width_pt is None:
+            return 1
+        font_sz    = _FONT_SZ.get(level, 12)
+        indent_pt  = (_BULLET_INDENT_EMU / 12700) if (use_bullet and level > 0) else 0
+        usable     = max(font_sz, available_width_pt - indent_pt - 18)  # ~9pt 内边距/侧
+        chars_line = max(1, usable / font_sz)
+        return max(1, math.ceil(len(text) / chars_line))
+
     n_l0_gaps  = sum(1 for i, (_, lv) in enumerate(items) if lv == 0 and i > 0)
     avail_text = available_pt - n_l0_gaps * _MIN_L0_SPC
 
-    # 计算行距缩放比例：优先保持目标行距，溢出时等比压缩到 100%（单倍）
-    base_target = sum(_FONT_SZ.get(lv,12) * _TARGET_LNS.get(lv,160)/100 for _,lv in items)
-    base_min    = sum(_FONT_SZ.get(lv,12)                                 for _,lv in items)
+    # 考虑换行后的实际高度
+    base_target = sum(_FONT_SZ.get(lv,12) * _TARGET_LNS.get(lv,160)/100
+                      * _est_lines(t, lv) for t, lv in items)
+    base_min    = sum(_FONT_SZ.get(lv,12) * _est_lines(t, lv) for t, lv in items)
 
     if base_target <= avail_text:
         scale     = 1.0
         remaining = avail_text - base_target
     elif base_min <= avail_text:
-        scale     = avail_text / base_target   # 等比缩减，保底 100%
+        scale     = avail_text / base_target
         remaining = 0.0
     else:
         scale     = 100 / max(_TARGET_LNS.values())
@@ -377,28 +400,22 @@ def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT):
 
     actual_lns = {lv: max(100, int(_TARGET_LNS[lv] * scale)) for lv in [0, 1, 2]}
 
-    # 两步空间分配，避免节标题上限截断后空间浪费：
-    #   第一步：节标题额外间距（_MIN_L0_SPC 已预留，此处分配上限内的额外量）
-    #   第二步：剩余空间均分给正文/二级条目
-    _MAX_L0_EXTRA = 20.0 - _MIN_L0_SPC   # 节标题额外部分上限 14pt
-    _MAX_OTHER    = 20.0                   # 正文条目段前间距上限
+    # 两步间距分配：L0 权重 = 4× L1，保证节标题在视觉上明显分隔
+    #   L0 额外间距上限 24pt（总上限 6+24=30pt）；L1 间距上限 14pt
+    _MAX_L0_EXTRA = 24.0
+    _MAX_OTHER    = 14.0
     n_other_gaps  = sum(1 for idx, (_, lv) in enumerate(items) if idx > 0 and lv != 0)
 
     if n_l0_gaps > 0 and remaining > 0:
-        # 用加权估算节标题应得额外量，再与上限取小
-        total_w   = 3 * n_l0_gaps + n_other_gaps
-        unit_init = remaining / total_w
-        l0_extra  = min(_MAX_L0_EXTRA, 3 * unit_init)
+        total_w  = 4 * n_l0_gaps + n_other_gaps
+        unit_raw = remaining / total_w
+        l0_extra = min(_MAX_L0_EXTRA, 4 * unit_raw)
     else:
         l0_extra = 0.0
 
     other_budget = remaining - n_l0_gaps * l0_extra
     unit_other   = (other_budget / n_other_gaps) if n_other_gaps > 0 else 0.0
     unit_other   = min(_MAX_OTHER, unit_other)
-
-    # 只有一段正文时不加项目符号（规范：只有一段时不需要小圆点）
-    n_body_items = sum(1 for _, lv in items if lv != 0)
-    use_bullet   = (n_body_items > 1)
 
     for i, (text, level) in enumerate(items):
         para = add_text(tf, text, first=(i == 0),
@@ -630,11 +647,12 @@ def add_layout3_slide(prs, title, body_items,
     slide = prs.slides.add_slide(prs.slide_layouts[3])
     set_slide_title(slide, title)
 
-    # 左侧文字区（ph idx=10）
+    # 左侧文字区（ph idx=10）；传入宽度以便 add_body_content 准确估算换行
     for shape in slide.shapes:
         try:
             if shape.placeholder_format.idx == 10:
-                add_body_content(shape.text_frame, body_items)
+                add_body_content(shape.text_frame, body_items,
+                                 available_width_pt=int(_PH10_WIDTH[3] / 12700))
                 break
         except:
             pass
@@ -1211,6 +1229,7 @@ WHITE       = RGBColor(255, 255, 255)   # 目录主标题、表头字体
 > 用 `a:ea` 设置的字体在 PowerPoint 中不生效，中文会 fallback 到 Arial。
 
 ```python
+import math
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
