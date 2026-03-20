@@ -1033,7 +1033,8 @@ EN_FONT = "Arial"
 
 
 def apply_font(run, cn_font=CN_FONT, en_font=EN_FONT,
-               size=None, bold=None, color=None):
+               size=None, bold=None, color=None,
+               italic=None, underline=None):
     """
     设置中文/英文/混排字体。
 
@@ -1044,11 +1045,18 @@ def apply_font(run, cn_font=CN_FONT, en_font=EN_FONT,
         cn_font=CN_FONT, en_font=None  → 纯中文：a:latin charset=-122 + a:cs
         cn_font=None, en_font=EN_FONT  → 纯英文/数字：a:latin（无 charset）
         cn_font=CN_FONT, en_font=EN_FONT → 中英混排：a:latin=Arial + a:ea=华文黑体_易方达
+        italic    : True/False，斜体（文字突出用）
+        underline : True/False，下划线（文字突出用）
 
     用法：
         run = para.add_run()
         run.text = "易方达 2024"
         apply_font(run, size=28, bold=False, color=DEEP_BLUE)
+
+        # 突出显示某段文字
+        apply_font(run, bold=True, color=BRIGHT_BLUE)
+        apply_font(run, italic=True)
+        apply_font(run, underline=True)
     """
     rPr = run._r.get_or_add_rPr()
 
@@ -1081,24 +1089,37 @@ def apply_font(run, cn_font=CN_FONT, en_font=EN_FONT,
                 el = etree.SubElement(rPr, qn(tag))
             el.set('typeface', face)
 
-    if size  is not None: run.font.size      = Pt(size)
-    if bold  is not None: run.font.bold      = bold
-    if color is not None: run.font.color.rgb = color
+    if size      is not None: run.font.size      = Pt(size)
+    if bold      is not None: run.font.bold      = bold
+    if italic    is not None: run.font.italic    = italic
+    if underline is not None: run.font.underline = underline
+    if color     is not None: run.font.color.rgb = color
 
 
 def add_text(tf, text, *, first=False, align=PP_ALIGN.LEFT,
              cn_font=CN_FONT, en_font=EN_FONT,
-             size=None, bold=None, color=DEEP_BLUE):
+             size=None, bold=None, color=DEEP_BLUE,
+             italic=None, underline=None):
     """
     向 text_frame 追加一个段落并应用字体。
 
     Args:
-        tf    : shape.text_frame
-        text  : 段落文字
-        first : True → 复用 tf.paragraphs[0]（清空已有内容），
-                False → 新增段落（默认）
-        align : 对齐方式，VI 规范默认靠左
-        color : 默认 DEEP_BLUE（R0,G80,B150），可覆盖
+        tf        : shape.text_frame
+        text      : 段落文字
+        first     : True → 复用 tf.paragraphs[0]（清空已有内容），
+                    False → 新增段落（默认）
+        align     : 对齐方式，VI 规范默认靠左
+        color     : 默认 DEEP_BLUE（R0,G80,B150），可覆盖
+        italic    : True → 斜体（正文突出方式之一）
+        underline : True → 下划线（正文突出方式之一）
+
+    文字突出方式（规范允许）：
+        bold=True               加粗
+        size=原字号+1 或 +2     放大字号
+        underline=True          下划线
+        italic=True             斜体
+        color=BRIGHT_BLUE 等    使用 VI 颜色
+
     Returns:
         para  : 设置完成的 paragraph 对象
     """
@@ -1108,7 +1129,8 @@ def add_text(tf, text, *, first=False, align=PP_ALIGN.LEFT,
     run = para.add_run()
     run.text = text
     apply_font(run, cn_font=cn_font, en_font=en_font,
-               size=size, bold=bold, color=color)
+               size=size, bold=bold, color=color,
+               italic=italic, underline=underline)
     para.alignment = align
     return para
 ```
