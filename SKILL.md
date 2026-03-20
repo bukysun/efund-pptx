@@ -244,13 +244,26 @@ def set_slide_title(slide, text, size=23, bold=True, color=WHITE):
     需注入一个带坐标的 <p:sp type="title"> 元素后才能填写文字。
 
     默认样式：WHITE 23pt 加粗（标题位于顶部蓝色横幅内，必须用白色）。
+
+    ⚠️ Layout 3/4 的 title placeholder 默认宽度仅 4.3"（左半区），会导致标题提前换行。
+    此函数自动将其扩展至 9.17"（蓝色横幅全宽）。
+    扩展时必须同时设置 left/top/height/width 四个属性，否则 <a:xfrm> 新建时
+    x/y 默认为 0，标题会错位到左上角。
     """
     title_shape = slide.shapes.title
     if title_shape is None:
         slide.shapes._spTree.insert(2, etree.fromstring(_TITLE_SP_XML))
         title_shape = slide.shapes.title
     if title_shape:
-        add_text(title_shape.text_frame, text, first=True,
+        # Layout 3/4 title placeholder 默认只有 4.3"，扩展到蓝色横幅全宽
+        # ⚠️ 必须同时设置四个属性，只改 width 会导致 x/y 归零（标题跑到左上角）
+        if title_shape.width < Inches(8):
+            _l = title_shape.left; _t = title_shape.top; _h = title_shape.height
+            title_shape.left = _l; title_shape.top = _t
+            title_shape.height = _h; title_shape.width = Inches(9.17)
+        tf = title_shape.text_frame
+        tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        add_text(tf, text, first=True,
                  cn_font=CN_FONT, en_font=None,
                  size=size, bold=bold, color=color)
 
@@ -742,14 +755,17 @@ add_body_content_blocks(slide, [
 ### 正文页（Layout 3 左文右图）
 
 ```python
-# ── 坐标常量（来自模板实测值） ────────────────────────────────
-_L3_RIGHT_CHART = (Inches(5.40), Inches(1.36), Inches(4.34), Inches(2.71))
+# ── 坐标常量 ──────────────────────────────────────────────────
+# 间距规则：label(0.27") → 0.10" gap → chart → 0.10" gap → caption(0.22")
+# label y=1.20"→1.47", chart y=1.57"→3.83"(h=2.26"), caption y=3.93"
+# ⚠️ chart 必须在 label/caption 之前添加（先加的在下层），label/caption 才不会被图片遮盖
 _L3_RIGHT_LABEL = (Inches(5.40), Inches(1.20), Inches(4.34), Inches(0.27))
-_L3_RIGHT_CAP   = (Inches(5.40), Inches(3.82), Inches(4.34), Inches(0.22))
+_L3_RIGHT_CHART = (Inches(5.40), Inches(1.57), Inches(4.34), Inches(2.26))
+_L3_RIGHT_CAP   = (Inches(5.40), Inches(3.93), Inches(4.34), Inches(0.22))
 
 
 def add_layout3_slide(prs, title, body_items,
-                      right_label='', right_caption=''):
+                      right_label='', right_caption='', right_image=None):
     """
     添加 Layout 3（左文右图）幻灯片，自动填写左侧文字，返回右侧图表区坐标。
 
@@ -800,6 +816,10 @@ def add_layout3_slide(prs, title, body_items,
                             left=_PH10_LEFT, top=_PH10_TOP,
                             width=_PH10_WIDTH[3])
 
+    # 图片先加（在下层），label/caption 后加（在上层，不被图片遮挡）
+    if right_image and os.path.exists(right_image):
+        l, t, w, h = _L3_RIGHT_CHART
+        add_picture_fit(slide, right_image, l, t, w, h)
     if right_label:   _add_textbox(slide, _L3_RIGHT_LABEL, right_label,   10, color=DEEP_BLUE)
     if right_caption: _add_textbox(slide, _L3_RIGHT_CAP,   right_caption,  7, color=DARK_GRAY)
 
@@ -1042,13 +1062,44 @@ Layout 4 不使用 ph idx=10，两个图表区域通过坐标手动放置。
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 
-# ── 坐标常量（来自模板实测值） ────────────────────────────────
-_L4_LEFT_CHART  = (Inches(0.40), Inches(1.49), Inches(4.32), Inches(2.54))
-_L4_RIGHT_CHART = (Inches(4.71), Inches(1.52), Inches(4.34), Inches(2.44))
+# ── 坐标常量 ──────────────────────────────────────────────────
+# 间距规则：label(0.27") → 0.10" gap → chart → 0.10" gap → caption(0.22")
+# label y=1.32"→1.59", chart y=1.69"→3.83"(h=2.14"), caption y=3.93"
+# ⚠️ chart 必须在 label/caption 之前添加（先加的在下层），label/caption 才不会被图片遮盖
 _L4_LEFT_LABEL  = (Inches(0.48), Inches(1.32), Inches(3.29), Inches(0.27))
 _L4_RIGHT_LABEL = (Inches(5.08), Inches(1.32), Inches(3.29), Inches(0.27))
-_L4_LEFT_CAP    = (Inches(0.40), Inches(3.86), Inches(4.05), Inches(0.22))
-_L4_RIGHT_CAP   = (Inches(5.57), Inches(3.82), Inches(4.05), Inches(0.22))
+_L4_LEFT_CHART  = (Inches(0.40), Inches(1.69), Inches(4.32), Inches(2.14))
+_L4_RIGHT_CHART = (Inches(4.71), Inches(1.69), Inches(4.34), Inches(2.14))
+_L4_LEFT_CAP    = (Inches(0.40), Inches(3.93), Inches(4.05), Inches(0.22))
+_L4_RIGHT_CAP   = (Inches(5.57), Inches(3.93), Inches(4.05), Inches(0.22))
+
+
+from PIL import Image as _PILImage
+
+def add_picture_fit(slide, image_path, box_l, box_t, box_w, box_h):
+    """
+    按原始宽高比缩放图片以适应 box，居中放置，不拉伸。
+
+    ⚠️ 不要直接用 slide.shapes.add_picture(path, l, t, w, h) 同时指定宽高，
+    否则图片会被强制拉伸填满 box，导致文字变形。
+    改用此函数，以 box 为边界等比缩放并居中。
+
+    Args:
+        slide              : 幻灯片对象
+        image_path         : 图片路径
+        box_l/t/w/h        : 目标区域坐标和尺寸（EMU），通常直接传入 _L3_RIGHT_CHART 等常量
+    """
+    with _PILImage.open(image_path) as im:
+        iw, ih = im.size
+    if iw / ih > box_w / box_h:   # 图片更宽，以宽度为基准缩放
+        new_w = box_w
+        new_h = int(box_w * ih / iw)
+    else:                          # 图片更高，以高度为基准缩放
+        new_h = box_h
+        new_w = int(box_h * iw / ih)
+    offset_l = (box_w - new_w) // 2
+    offset_t = (box_h - new_h) // 2
+    slide.shapes.add_picture(image_path, box_l + offset_l, box_t + offset_t, new_w, new_h)
 
 
 def _add_textbox(slide, ltwh, text, size, bold=False, color=DARK_GRAY, cn_font=CN_FONT):
@@ -1061,7 +1112,8 @@ def _add_textbox(slide, ltwh, text, size, bold=False, color=DARK_GRAY, cn_font=C
 
 def add_layout4_slide(prs, title,
                       left_label='', right_label='',
-                      left_caption='', right_caption=''):
+                      left_caption='', right_caption='',
+                      left_image=None, right_image=None):
     """
     添加 Layout 4（双图）幻灯片，返回 slide 和两个图表区域坐标。
 
@@ -1101,6 +1153,13 @@ def add_layout4_slide(prs, title,
     slide = prs.slides.add_slide(prs.slide_layouts[4])
     set_slide_title(slide, title)
 
+    # 图片先加（在下层），label/caption 后加（在上层，不被图片遮挡）
+    if left_image and os.path.exists(left_image):
+        l, t, w, h = _L4_LEFT_CHART
+        add_picture_fit(slide, left_image, l, t, w, h)
+    if right_image and os.path.exists(right_image):
+        l, t, w, h = _L4_RIGHT_CHART
+        add_picture_fit(slide, right_image, l, t, w, h)
     if left_label:    _add_textbox(slide, _L4_LEFT_LABEL,  left_label,  10, color=DEEP_BLUE)
     if right_label:   _add_textbox(slide, _L4_RIGHT_LABEL, right_label, 10, color=DEEP_BLUE)
     if left_caption:  _add_textbox(slide, _L4_LEFT_CAP,    left_caption,  7, color=DARK_GRAY)
@@ -1150,7 +1209,7 @@ def _set_toc_row(tr, number: str, title: str, color_hex: str):
         rPr.insert(0, fill)
 
 
-def fill_toc_table(tbl, chapters: list[str], active_idx: int):
+def fill_toc_table(tbl, chapters: list[str], active_idx):
     """
     填写目录表格内容，自动调整行数，高亮当前章节，灰化其余章节。
 
@@ -1158,6 +1217,7 @@ def fill_toc_table(tbl, chapters: list[str], active_idx: int):
         tbl        : shape.table 对象
         chapters   : 章节标题列表（任意长度，无上限）
         active_idx : 当前章节的 0-based 索引（显示为 DEEP_BLUE，其余灰化）
+                     None → 全部章节显示为 DEEP_BLUE（总览目录页专用）
 
     行数处理规则：
         章节数 < 模板行数 → 删除多余行（不留空行）
@@ -1183,11 +1243,14 @@ def fill_toc_table(tbl, chapters: list[str], active_idx: int):
     tr_list = tbl_xml.findall(qn('a:tr'))
 
     for ri, tr in enumerate(tr_list):
-        color_hex = '005096' if ri == active_idx else 'CCCCCC'
+        if active_idx is None:
+            color_hex = '005096'   # 全部 DEEP_BLUE（总览页）
+        else:
+            color_hex = '005096' if ri == active_idx else 'CCCCCC'
         _set_toc_row(tr, f'{ri + 1:02d}.', chapters[ri], color_hex)
 
 
-def add_toc_slide(prs, toc_table_xml, chapters: list[str], active_idx: int):
+def add_toc_slide(prs, toc_table_xml, chapters: list[str], active_idx=None):
     """
     添加目录页：克隆模板表格 XML → 填入内容 → 返回 slide。
 
@@ -1195,7 +1258,7 @@ def add_toc_slide(prs, toc_table_xml, chapters: list[str], active_idx: int):
         prs           : Presentation 对象
         toc_table_xml : Quick Start 阶段提取的 deepcopy XML 元素
         chapters      : 章节标题列表（最多 7 项）
-        active_idx    : 当前高亮章节的 0-based 索引
+        active_idx    : 当前高亮章节的 0-based 索引；None → 全部章节蓝色（总览页）
     """
     slide = prs.slides.add_slide(prs.slide_layouts[1])
 
@@ -1223,8 +1286,14 @@ chapters = [
     "风险提示及免责声明",
 ]
 
-# 在"投资策略"这一章时，active_idx=1（第2章高亮，其余灰化）
-toc_slide = add_toc_slide(prs, toc_table_xml, chapters, active_idx=1)
+# ① 演示文稿开头：总览目录页，全部章节蓝色
+add_toc_slide(prs, toc_table_xml, chapters)           # active_idx=None（默认）
+
+# ② 每章正文前：章节跳转页，当前章节高亮，其余灰化
+# ⚠️ 必须为每个章节生成一张跳转页，不可只有总览目录页
+for i in range(len(chapters)):
+    add_toc_slide(prs, toc_table_xml, chapters, active_idx=i)
+    # ... 此章节的正文页 ...
 ```
 
 ### 封底页
@@ -1537,6 +1606,10 @@ def add_text(tf, text, *, first=False, align=PP_ALIGN.LEFT,
 **目录：**
 - 内容必须填入给定表格，不得添加图片，格式不能自行调整
 - 当前章节正常显示，其他章节灰化（LIGHT_GRAY）
+- **⚠️ 必须包含两种目录页，缺一不可：**
+  1. **总览目录页**（演示文稿开头，紧跟封面）：`add_toc_slide(prs, toc_table_xml, chapters)` — `active_idx=None`，全部章节蓝色
+  2. **章节跳转页**（每个章节正文前各一张）：`add_toc_slide(prs, toc_table_xml, chapters, active_idx=i)` — 当前章节蓝色，其余灰化
+- 常见错误：只生成总览目录页，缺少章节跳转页 → 导致演示时无法指示当前进度
 
 **正文：**
 - "上文下图" 或 "左文右图"
