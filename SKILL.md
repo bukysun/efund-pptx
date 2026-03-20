@@ -753,8 +753,8 @@ def add_layout4_slide(prs, title,
 
     if left_label:    _add_textbox(slide, _L4_LEFT_LABEL,  left_label,  10, color=DEEP_BLUE)
     if right_label:   _add_textbox(slide, _L4_RIGHT_LABEL, right_label, 10, color=DEEP_BLUE)
-    if left_caption:  _add_textbox(slide, _L4_LEFT_CAP,    left_caption,  7, color=MID_GRAY)
-    if right_caption: _add_textbox(slide, _L4_RIGHT_CAP,   right_caption, 7, color=MID_GRAY)
+    if left_caption:  _add_textbox(slide, _L4_LEFT_CAP,    left_caption,  7, color=DARK_GRAY)
+    if right_caption: _add_textbox(slide, _L4_RIGHT_CAP,   right_caption, 7, color=DARK_GRAY)
 
     return slide, _L4_LEFT_CHART, _L4_RIGHT_CHART
 ```
