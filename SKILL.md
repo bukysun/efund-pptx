@@ -402,8 +402,8 @@ def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT,
 
     # 两步间距分配：L0 权重 = 4× L1，保证节标题在视觉上明显分隔
     #   L0 额外间距上限 24pt（总上限 6+24=30pt）；L1 间距上限 14pt
-    _MAX_L0_EXTRA = 24.0
-    _MAX_OTHER    = 14.0
+    _MAX_L0_EXTRA = 28.0
+    _MAX_OTHER    = 12.0
     n_other_gaps  = sum(1 for idx, (_, lv) in enumerate(items) if idx > 0 and lv != 0)
 
     if n_l0_gaps > 0 and remaining > 0:
@@ -432,6 +432,137 @@ def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT,
         else:
             spc_before = unit_other
         _set_para_spacing(para, spc_before_pt=spc_before, line_spc_pct=actual_lns[level])
+
+
+# ── 多文本框正文布局（推荐用于 2+ 个 L0 节） ──────────────────
+# 每个 L0 节独立一个 text box，节间空白是两个 shape 之间的绝对空间，
+# 任何渲染引擎都不会压缩，视觉效果比 spc_before 段落间距更可靠。
+
+_LINE_HT_PT = {0: 15 * 1.40, 1: 12 * 1.55, 2: 10 * 1.55}   # pt per line（含行距）
+
+
+def add_body_content_blocks(slide, items,
+                            left=_PH10_LEFT, top=_PH10_TOP,
+                            width=_PH10_WIDTH[2],
+                            available_pt=CONTENT_HEIGHT_PT,
+                            min_gap_pt=14.0,
+                            max_gap_pt=22.0):
+    """
+    多文本框正文布局：每个 L0 节独立一个 text box，节间留真实空白间距。
+
+    相比 add_body_content（单文本框 + spc_before），节间空隙是两个 shape
+    之间的绝对空白，渲染结果更稳定可靠。推荐用于含 2+ 个 L0 节的正文页。
+
+    ⚠️ 调用此函数时会自动移除幻灯片中的 ph idx=10 占位框，防止空框显示。
+
+    Args:
+        slide        : 幻灯片对象（需要 slide，不是 tf）
+        items        : list of (text, level) tuples，同 add_body_content
+        left         : 内容区左边距（EMU），默认 _PH10_LEFT (0.40")
+        top          : 内容区顶部（EMU），默认 _PH10_TOP (1.42")
+        width        : 内容区宽度（EMU），默认 _PH10_WIDTH[2]（Layout 2 全宽）
+        available_pt : 内容区可用高度（pt），默认 195pt
+        min_gap_pt   : 节间最小间距（pt），默认 14pt
+        max_gap_pt   : 节间最大间距（pt），默认 22pt（防止内容少时间距过大）
+
+    Returns:
+        list of text box shapes（每节一个）
+
+    Example:
+        add_body_content_blocks(slide, [
+            ('核心投资理念', 0),
+            ('客户至上：为客户提供有针对性的产品', 1),
+            ('价值导向，研究驱动', 1),
+            ('风险管理', 0),
+            ('全流程风险管理体系', 1),
+        ])
+    """
+    _FONT_SZ     = {0: 15, 1: 12, 2: 10}
+    _LNS_TARGET  = {0: 140, 1: 155, 2: 155}   # 目标行距 %
+    _ITEM_GAP_BASE = 3.0                        # 同节内相邻条目段前间距，pt
+
+    # 0. 移除 ph idx=10 占位框，防止空框渲染为"单击此处编辑母版标题样式"
+    for shape in list(slide.shapes):
+        try:
+            if shape.placeholder_format.idx == 10:
+                shape._element.getparent().remove(shape._element)
+                break
+        except Exception:
+            pass
+
+    # 1. 按 L0 分组
+    sections = []
+    current  = []
+    for text, level in items:
+        if level == 0 and current:
+            sections.append(current)
+            current = []
+        current.append((text, level))
+    if current:
+        sections.append(current)
+    if not sections:
+        return []
+
+    n_body     = sum(1 for _, lv in items if lv != 0)
+    use_bullet = (n_body > 1)
+    width_pt   = width / 12700   # EMU → pt
+
+    def _est_lines(text, level):
+        font_sz   = _FONT_SZ.get(level, 12)
+        indent_pt = (_BULLET_INDENT_EMU / 12700) if (use_bullet and level > 0) else 0
+        usable    = max(font_sz, width_pt - indent_pt - 12)
+        return max(1, math.ceil(len(text) / max(1, usable / font_sz)))
+
+    def _section_h(sec_items, lns_pct, item_gap):
+        h = 0.0
+        for i, (txt, lv) in enumerate(sec_items):
+            h += _FONT_SZ.get(lv, 12) * lns_pct.get(lv, 155) / 100 * _est_lines(txt, lv)
+            if i > 0:
+                h += item_gap
+        return h
+
+    # 2. 计算初始高度；若超出则等比缩减行距（最低 100%）
+    lns_pct  = dict(_LNS_TARGET)
+    item_gap = _ITEM_GAP_BASE
+    heights  = [_section_h(sec, lns_pct, item_gap) for sec in sections]
+    total_h  = sum(heights)
+
+    if total_h > available_pt:
+        scale    = available_pt / total_h
+        lns_pct  = {lv: max(100, int(_LNS_TARGET[lv] * scale)) for lv in [0, 1, 2]}
+        item_gap = max(0.0, _ITEM_GAP_BASE * scale)
+        heights  = [_section_h(sec, lns_pct, item_gap) for sec in sections]
+        total_h  = sum(heights)
+
+    n_gaps = len(sections) - 1
+
+    # 3. 节间空隙：剩余空间均分，限制在 [min_gap_pt, max_gap_pt]
+    spare  = max(0.0, available_pt - total_h)
+    gap_pt = min(max_gap_pt, max(min_gap_pt, spare / n_gaps)) if n_gaps > 0 else 0.0
+
+    # 4. 逐节创建 text box，y 坐标累加
+    y_emu  = top
+    shapes = []
+    for si, sec_items in enumerate(sections):
+        sec_h_emu = int(_section_h(sec_items, lns_pct, item_gap) * 12700 * 1.25)  # 25% buffer 防裁剪
+        txb = slide.shapes.add_textbox(left, y_emu, width, sec_h_emu)
+        txb.text_frame.word_wrap = True
+        shapes.append(txb)
+
+        for i, (text, level) in enumerate(sec_items):
+            para = add_text(txb.text_frame, text, first=(i == 0),
+                            **BODY_STYLES.get(level, BODY_STYLES[1]))
+            if level == 0 or not use_bullet:
+                _set_para_bullet(para, enabled=False)
+            else:
+                _set_para_bullet(para, enabled=True, level=level)
+            spc = 0.0 if i == 0 else item_gap
+            _set_para_spacing(para, spc_before_pt=spc,
+                              line_spc_pct=lns_pct.get(level, 155))
+
+        y_emu += sec_h_emu + int(gap_pt * 12700)
+
+    return shapes
 ```
 
 ### 表格工具函数
@@ -576,19 +707,16 @@ slide = prs.slides.add_slide(prs.slide_layouts[2])
 
 set_slide_title(slide, '投资理念与策略框架')
 
-for shape in slide.shapes:
-    try:
-        if shape.placeholder_format.idx == 10:
-            add_body_content(shape.text_frame, [
-                ('核心投资理念', 0),
-                ('客户至上：为客户提供有针对性的产品与专业解决方案', 1),
-                ('价值导向：以基本面研究驱动投资决策', 1),
-                ('风险管理', 0),
-                ('全流程风险管理，覆盖投前、投中、投后各环节', 1),
-                ('独立的风控团队，与投资团队形成制衡机制', 1),
-            ])
-    except:
-        pass
+# 多节内容：使用 add_body_content_blocks（每节独立 text box，节间绝对空白）
+add_body_content_blocks(slide, [
+    ('核心投资理念', 0),
+    ('客户至上：为客户提供有针对性的产品与专业解决方案', 1),
+    ('价值导向：以基本面研究驱动投资决策', 1),
+    ('风险管理', 0),
+    ('全流程风险管理，覆盖投前、投中、投后各环节', 1),
+    ('独立的风控团队，与投资团队形成制衡机制', 1),
+])
+# 单节/无 L0 内容：仍可用 add_body_content(shape.text_frame, items)
 ```
 
 ### 正文页（Layout 3 左文右图）
@@ -647,15 +775,10 @@ def add_layout3_slide(prs, title, body_items,
     slide = prs.slides.add_slide(prs.slide_layouts[3])
     set_slide_title(slide, title)
 
-    # 左侧文字区（ph idx=10）；传入宽度以便 add_body_content 准确估算换行
-    for shape in slide.shapes:
-        try:
-            if shape.placeholder_format.idx == 10:
-                add_body_content(shape.text_frame, body_items,
-                                 available_width_pt=int(_PH10_WIDTH[3] / 12700))
-                break
-        except:
-            pass
+    # 左侧文字区：多节内容用 add_body_content_blocks（节间绝对空白，更可靠）
+    add_body_content_blocks(slide, body_items,
+                            left=_PH10_LEFT, top=_PH10_TOP,
+                            width=_PH10_WIDTH[3])
 
     if right_label:   _add_textbox(slide, _L3_RIGHT_LABEL, right_label,   10, color=DEEP_BLUE)
     if right_caption: _add_textbox(slide, _L3_RIGHT_CAP,   right_caption,  7, color=DARK_GRAY)
