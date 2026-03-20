@@ -729,6 +729,150 @@ add_vi_table(slide,
 )
 ```
 
+### 图表样式工具函数
+
+```python
+def style_chart(chart,
+                series_colors=None,
+                gridlines='h',
+                show_legend=True,
+                legend_size=9):
+    """
+    为图表应用 VI 规范样式。add_chart 之后立即调用。
+
+    VI 规范强制项（自动应用）：
+      - 图表区 / 绘图区：透明背景，无边框（noFill）
+      - 无图表标题（chart.has_title = False）
+
+    Args:
+        chart         : python-pptx Chart 对象
+        series_colors : 各系列颜色列表（按顺序），如 [DEEP_BLUE, LIGHT_GRAY]
+                        柱/面积图 → 设置 fill；折线图 → 设置 line.color
+                        None → 不修改颜色
+        gridlines     : 'h'  → 横网格线（value 轴，默认）
+                        'v'  → 纵网格线（category 轴）
+                        'none' → 无网格线
+                        颜色固定 LIGHT_GRAY(R204,204,204) 实线，宽度 0.5pt
+        show_legend   : True → 保留图例（默认）；False → 隐藏图例
+        legend_size   : 图例字号，默认 9pt，字体 Arial
+
+    常用系列颜色组合：
+        单系列    → [DEEP_BLUE]
+        双系列    → [DEEP_BLUE, LIGHT_GRAY]
+        三系列    → [DEEP_BLUE, BRIGHT_BLUE, LIGHT_GRAY]
+        突出+淡化 → [DEEP_BLUE, LIGHT_GRAY, LIGHT_GRAY, LIGHT_GRAY]
+
+    Example:
+        cd = CategoryChartData()
+        cd.categories = ['2021', '2022', '2023', '2024']
+        cd.add_series('易方达', (12.3, 8.7, 15.2, 18.6))
+        cd.add_series('沪深300', (5.1, -21.6, -11.4, 14.7))
+        chart = slide.shapes.add_chart(XL_CHART_TYPE.LINE, *chart_area, cd).chart
+        style_chart(chart,
+                    series_colors=[DEEP_BLUE, LIGHT_GRAY],
+                    gridlines='h',
+                    show_legend=True)
+    """
+    # ── 1. 无图表标题 ────────────────────────────────────────
+    chart.has_title = False
+
+    # ── 2. 背景透明（XML 操作，chart_area / plot_area 无高层 API）──
+    chartSpace = chart._element                          # <c:chartSpace>
+    c_chart    = chartSpace.find(qn('c:chart'))
+    plotArea   = c_chart.find(qn('c:plotArea'))
+
+    for node in (chartSpace, plotArea):
+        spPr = node.find(qn('c:spPr'))
+        if spPr is None:
+            spPr = etree.SubElement(node, qn('c:spPr'))
+        for tag in [qn('a:solidFill'), qn('a:gradFill'),
+                    qn('a:noFill'),    qn('a:pattFill')]:
+            el = spPr.find(tag)
+            if el is not None:
+                spPr.remove(el)
+        etree.SubElement(spPr, qn('a:noFill'))
+        # 无边框
+        ln = spPr.find(qn('a:ln'))
+        if ln is None:
+            ln = etree.SubElement(spPr, qn('a:ln'))
+        noFillLn = ln.find(qn('a:noFill'))
+        if noFillLn is None:
+            ln.clear(); etree.SubElement(ln, qn('a:noFill'))
+
+    # ── 3. 系列颜色 ──────────────────────────────────────────
+    if series_colors:
+        for i, color in enumerate(series_colors):
+            if i >= len(chart.series): break
+            s = chart.series[i]
+            try:
+                # 折线图：设置线条颜色
+                s.format.line.color.rgb = color
+            except Exception:
+                pass
+            try:
+                # 柱/面积图：设置填充颜色
+                s.format.fill.solid()
+                s.format.fill.fore_color.rgb = color
+            except Exception:
+                pass
+
+    # ── 4. 网格线 ────────────────────────────────────────────
+    _GRAY_EMU = str(int(0.5 * 12700))   # 0.5pt in EMU
+
+    def _set_gridline_color(axis):
+        """为指定轴的主网格线设置 LIGHT_GRAY 实线 0.5pt。"""
+        gl = axis.major_gridlines
+        ln = gl.format.line
+        ln.color.rgb = LIGHT_GRAY
+        # 线宽：直接操作 XML
+        ln_el = gl.format._element.find(qn('a:ln'))
+        if ln_el is not None:
+            ln_el.set('w', _GRAY_EMU)
+
+    def _hide_gridlines(axis):
+        axis.has_major_gridlines = False
+
+    # 默认先全部关掉，再按参数开一侧
+    try: _hide_gridlines(chart.value_axis)
+    except Exception: pass
+    try: _hide_gridlines(chart.category_axis)
+    except Exception: pass
+
+    if gridlines == 'h':
+        try:
+            chart.value_axis.has_major_gridlines = True
+            _set_gridline_color(chart.value_axis)
+        except Exception:
+            pass
+    elif gridlines == 'v':
+        try:
+            chart.category_axis.has_major_gridlines = True
+            _set_gridline_color(chart.category_axis)
+        except Exception:
+            pass
+    # gridlines == 'none'：保持关闭
+
+    # ── 5. 图例 ──────────────────────────────────────────────
+    chart.has_legend = show_legend
+    if show_legend:
+        legend = c_chart.find(qn('c:legend'))
+        if legend is not None:
+            txPr = legend.find(qn('c:txPr'))
+            if txPr is None:
+                txPr = etree.SubElement(legend, qn('c:txPr'))
+            txPr.clear()
+            etree.SubElement(txPr, qn('a:bodyPr'))
+            etree.SubElement(txPr, qn('a:lstStyle'))
+            p      = etree.SubElement(txPr, qn('a:p'))
+            pPr    = etree.SubElement(p, qn('a:pPr'))
+            defRPr = etree.SubElement(pPr, qn('a:defRPr'))
+            defRPr.set('sz', str(legend_size * 100))   # 单位：百分之一磅
+            defRPr.set('b', '0')
+            latin  = etree.SubElement(defRPr, qn('a:latin'))
+            latin.set('typeface', EN_FONT)
+            etree.SubElement(p, qn('a:endParaRPr')).set('lang', 'zh-CN')
+```
+
 ### 正文页（Layout 4 双图）
 
 Layout 4 不使用 ph idx=10，两个图表区域通过坐标手动放置。
