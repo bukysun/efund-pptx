@@ -396,11 +396,15 @@ def add_body_content(tf, items, available_pt=CONTENT_HEIGHT_PT):
     unit_other   = (other_budget / n_other_gaps) if n_other_gaps > 0 else 0.0
     unit_other   = min(_MAX_OTHER, unit_other)
 
+    # 只有一段正文时不加项目符号（规范：只有一段时不需要小圆点）
+    n_body_items = sum(1 for _, lv in items if lv != 0)
+    use_bullet   = (n_body_items > 1)
+
     for i, (text, level) in enumerate(items):
         para = add_text(tf, text, first=(i == 0),
                         **BODY_STYLES.get(level, BODY_STYLES[1]))
-        # 项目符号：一级标题无符号，正文/二级文字加 •（悬挂缩进）
-        if level == 0:
+        # 项目符号：一级标题永远无符号；正文/二级文字仅在多段时加 •
+        if level == 0 or not use_bullet:
             _set_para_bullet(para, enabled=False)
         else:
             _set_para_bullet(para, enabled=True, level=level)
