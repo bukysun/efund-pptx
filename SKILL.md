@@ -577,31 +577,72 @@ for shape in slide.shapes:
 ### 正文页（Layout 3 左文右图）
 
 ```python
-from pptx.util import Inches
+# ── 坐标常量（来自模板实测值） ────────────────────────────────
+_L3_RIGHT_CHART = (Inches(5.40), Inches(1.36), Inches(4.34), Inches(2.71))
+_L3_RIGHT_LABEL = (Inches(5.40), Inches(1.20), Inches(4.34), Inches(0.27))
+_L3_RIGHT_CAP   = (Inches(5.40), Inches(3.82), Inches(4.34), Inches(0.22))
 
-slide = prs.slides.add_slide(prs.slide_layouts[3])
 
-# 标题（ph idx=0，正常设置）
-set_slide_title(slide, '资产管理规模增长')
+def add_layout3_slide(prs, title, body_items,
+                      right_label='', right_caption=''):
+    """
+    添加 Layout 3（左文右图）幻灯片，自动填写左侧文字，返回右侧图表区坐标。
 
-# 左侧文字（ph idx=10）
-for shape in slide.shapes:
-    try:
-        if shape.placeholder_format.idx == 10:
-            add_body_content(shape.text_frame, [
+    Args:
+        prs           : Presentation 对象
+        title         : 幻灯片标题
+        body_items    : 左侧文字内容，格式同 add_body_content 的 items 参数
+                        如 [('规模概况', 0), ('突破2万亿元', 1), ...]
+        right_label   : 右侧图表小标题（图表上方，10pt DEEP_BLUE，可省略）
+        right_caption : 右侧数据来源（图表下方，7pt DARK_GRAY，可省略）
+
+    Returns:
+        slide            : 幻灯片对象
+        _L3_RIGHT_CHART  : 右图区域 (l, t, w, h)，供 add_chart / add_picture 使用
+
+    Example:
+        from pptx.enum.chart import XL_CHART_TYPE
+        from pptx.chart.data import CategoryChartData
+
+        slide, chart_area = add_layout3_slide(
+            prs, '资产管理规模增长',
+            body_items=[
                 ('规模概况', 0),
                 ('截至2024年底，管理规模突破2万亿元', 1),
                 ('公募基金规模行业前三', 1),
                 ('主要产品线', 0),
                 ('权益类基金：占比约40%', 1),
                 ('固收类基金：占比约45%', 1),
-            ])
-    except:
-        pass
+            ],
+            right_label='AUM增长趋势（亿元）',
+            right_caption='数据来源：公司季报，截至2024年12月',
+        )
 
-# 右侧区域（x≈5.40"，w≈4.34"）：手动添加图表/图片/文本框
-# txBox = slide.shapes.add_textbox(Inches(5.4), Inches(1.42), Inches(4.34), Inches(2.71))
-# 或通过 slide.shapes.add_chart(...) / slide.shapes.add_picture(...) 添加
+        cd = CategoryChartData()
+        cd.categories = ['2021', '2022', '2023', '2024']
+        cd.add_series('管理规模', (15800, 17200, 18900, 21300))
+        chart = slide.shapes.add_chart(
+            XL_CHART_TYPE.COLUMN_CLUSTERED, *chart_area, cd).chart
+        chart.has_title = False
+        chart.series[0].format.fill.solid()
+        chart.series[0].format.fill.fore_color.rgb = DEEP_BLUE
+    """
+    slide = prs.slides.add_slide(prs.slide_layouts[3])
+    set_slide_title(slide, title)
+
+    # 左侧文字区（ph idx=10）
+    for shape in slide.shapes:
+        try:
+            if shape.placeholder_format.idx == 10:
+                add_body_content(shape.text_frame, body_items)
+                break
+        except:
+            pass
+
+    if right_label:   _add_textbox(slide, _L3_RIGHT_LABEL, right_label,   10, color=DEEP_BLUE)
+    if right_caption: _add_textbox(slide, _L3_RIGHT_CAP,   right_caption,  7, color=DARK_GRAY)
+
+    return slide, _L3_RIGHT_CHART
 ```
 
 > **不要在文本字符串中手动嵌入 • 字符**；`add_body_content` 通过 `_set_para_bullet` 在 XML 层面添加项目符号（Arial •，悬挂缩进 4.8mm），level 0 标题显式设为 `buNone`。
