@@ -477,18 +477,9 @@ def add_body_content_blocks(slide, items,
             ('全流程风险管理体系', 1),
         ])
     """
-    _FONT_SZ     = {0: 15, 1: 12, 2: 10}
-    _LNS_TARGET  = {0: 140, 1: 155, 2: 155}   # 目标行距 %
-    _ITEM_GAP_BASE = 3.0                        # 同节内相邻条目段前间距，pt
-
-    # 0. 移除 ph idx=10 占位框，防止空框渲染为"单击此处编辑母版标题样式"
-    for shape in list(slide.shapes):
-        try:
-            if shape.placeholder_format.idx == 10:
-                shape._element.getparent().remove(shape._element)
-                break
-        except Exception:
-            pass
+    _FONT_SZ       = {0: 15, 1: 12, 2: 10}
+    _LNS_TARGET    = {0: 140, 1: 155, 2: 155}   # 目标行距 %
+    _ITEM_GAP_BASE = 3.0                          # 同节内相邻条目段前间距，pt
 
     # 1. 按 L0 分组
     sections = []
@@ -506,6 +497,7 @@ def add_body_content_blocks(slide, items,
     n_body     = sum(1 for _, lv in items if lv != 0)
     use_bullet = (n_body > 1)
     width_pt   = width / 12700   # EMU → pt
+    n_gaps     = len(sections) - 1
 
     def _est_lines(text, level):
         font_sz   = _FONT_SZ.get(level, 12)
@@ -521,26 +513,54 @@ def add_body_content_blocks(slide, items,
                 h += item_gap
         return h
 
-    # 2. 计算初始高度；若超出则等比缩减行距（最低 100%）
     lns_pct  = dict(_LNS_TARGET)
     item_gap = _ITEM_GAP_BASE
     heights  = [_section_h(sec, lns_pct, item_gap) for sec in sections]
     total_h  = sum(heights)
 
-    if total_h > available_pt:
-        scale    = available_pt / total_h
-        lns_pct  = {lv: max(100, int(_LNS_TARGET[lv] * scale)) for lv in [0, 1, 2]}
-        item_gap = max(0.0, _ITEM_GAP_BASE * scale)
-        heights  = [_section_h(sec, lns_pct, item_gap) for sec in sections]
-        total_h  = sum(heights)
+    # 2. 动态判断：多文本框 or 单文本框
+    #    多文本框需要：内容高度 + n_gaps × min_gap_pt ≤ available_pt
+    #    否则内容太密，gap 开销太大 → 退回单文本框（段落间距控制）
+    total_with_min_gaps = total_h + (n_gaps * min_gap_pt if n_gaps > 0 else 0)
 
-    n_gaps = len(sections) - 1
+    if total_with_min_gaps > available_pt:
+        # ── 单文本框模式 ──────────────────────────────────────
+        # 找到 ph10 直接使用，找不到则新建一个等尺寸 textbox
+        ph10_shape = None
+        for shape in slide.shapes:
+            try:
+                if shape.placeholder_format.idx == 10:
+                    ph10_shape = shape
+                    break
+            except Exception:
+                pass
+        if ph10_shape:
+            add_body_content(ph10_shape.text_frame, items,
+                             available_pt=available_pt,
+                             available_width_pt=width_pt)
+        else:
+            txb = slide.shapes.add_textbox(left, top, width, int(available_pt * 12700))
+            txb.text_frame.word_wrap = True
+            add_body_content(txb.text_frame, items,
+                             available_pt=available_pt,
+                             available_width_pt=width_pt)
+        return []
 
-    # 3. 节间空隙：剩余空间均分，限制在 [min_gap_pt, max_gap_pt]
+    # ── 多文本框模式 ──────────────────────────────────────────
+    # 3. 移除 ph idx=10 占位框，防止空框渲染为"单击此处编辑母版标题样式"
+    for shape in list(slide.shapes):
+        try:
+            if shape.placeholder_format.idx == 10:
+                shape._element.getparent().remove(shape._element)
+                break
+        except Exception:
+            pass
+
+    # 4. 节间空隙：剩余空间均分，限制在 [min_gap_pt, max_gap_pt]
     spare  = max(0.0, available_pt - total_h)
     gap_pt = min(max_gap_pt, max(min_gap_pt, spare / n_gaps)) if n_gaps > 0 else 0.0
 
-    # 4. 逐节创建 text box，y 坐标累加
+    # 5. 逐节创建 text box，y 坐标累加
     y_emu  = top
     shapes = []
     for si, sec_items in enumerate(sections):
