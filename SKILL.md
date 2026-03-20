@@ -602,6 +602,88 @@ for shape in slide.shapes:
 
 > **不要在文本字符串中手动嵌入 • 字符**；`add_body_content` 通过 `_set_para_bullet` 在 XML 层面添加项目符号（Arial •，悬挂缩进 4.8mm），level 0 标题显式设为 `buNone`。
 
+### 正文页（上文下表 / 上文下图）
+
+当一页中**文字在上、表格/图表在下**时，需缩短 ph10 高度为文字腾出空间。
+
+> ⚠️ **必须用 `shrink_ph10()` 缩短 ph10，不可直接赋值 `shape.height`。**
+> 直接赋值会让 python-pptx 新建 `<a:xfrm>` 元素，但 `off/@x` 和 `off/@y` 默认为 0，
+> 导致文字出现在标题位置（top=0）或文字竖排（width=0）。
+
+```python
+# ── 常量（来自模板实测值） ────────────────────────────────────
+_PH10_TOP  = Inches(1.42)   # 所有正文布局内容区顶部
+_PH10_LEFT = Inches(0.40)   # 所有正文布局内容区左边距
+
+_PH10_WIDTH = {
+    2: Inches(8.782),   # Layout 2 全宽
+    3: Inches(4.884),   # Layout 3 左半区
+}
+
+
+def shrink_ph10(slide, layout_idx, new_height_inches):
+    """
+    缩短 ph10（内容占位符）高度，为下方表格/图表腾出空间。
+
+    ⚠️ 必须同时显式设置 left / top / width / height 全部四个属性，
+    否则修改任意一个都会创建新的 <a:xfrm>，而其余三个属性默认为 0，
+    导致文字移位（top=0 → 出现在标题位置）或竖排（width=0）。
+
+    Args:
+        slide             : 幻灯片对象
+        layout_idx        : 布局索引（2 或 3）
+        new_height_inches : 文字区新高度（英寸），例如 0.9 或 1.2
+
+    Returns:
+        找到的 ph10 shape，或 None。
+    """
+    for shape in slide.shapes:
+        try:
+            if shape.placeholder_format.idx == 10:
+                shape.left   = _PH10_LEFT
+                shape.top    = _PH10_TOP
+                shape.height = Inches(new_height_inches)
+                shape.width  = _PH10_WIDTH[layout_idx]
+                return shape
+        except:
+            pass
+    return None
+
+
+# ── 示例：Layout 2 上文下表 ──────────────────────────────────
+slide = prs.slides.add_slide(prs.slide_layouts[2])
+set_slide_title(slide, '主要指标对比')
+
+# 1. 缩短 ph10，留出 1.2" 给文字
+ph10 = shrink_ph10(slide, layout_idx=2, new_height_inches=1.2)
+if ph10:
+    add_body_content(ph10.text_frame, [
+        ('核心结论', 0),
+        ('2024年旗舰主动权益基金平均超额收益 +8.2%', 1),
+        ('固收类产品最大回撤控制在 0.5% 以内', 1),
+    ], available_pt=1.2 * 72)   # ← 与 new_height_inches 对应
+
+# 2. 表格放在文字区下方
+# ph10 占 y=1.42"～(1.42+1.2)=2.62"，表格从 y=2.65" 开始
+TABLE_TOP = Inches(1.42 + 1.2 + 0.05)   # 5px 间隙
+add_vi_table(slide,
+    headers=['指标', '2023年', '2024年', '同比变化'],
+    rows_data=[
+        ['管理规模(亿)',  ('18,900', dict(is_number=True)),
+                         ('21,300', dict(is_number=True)),
+                         ('+12.7%', dict(is_number=True, bold=True))],
+        ['超额收益',     ('+5.1%',  dict(is_number=True)),
+                         ('+8.2%',  dict(is_number=True)),
+                         ('+3.1pp', dict(is_number=True, bold=True))],
+        ['最大回撤',     ('-0.8%',  dict(is_number=True)),
+                         ('-0.5%',  dict(is_number=True)),
+                         ('+0.3pp', dict(is_number=True))],
+    ],
+    top=TABLE_TOP,
+    height=Inches(3.86 - 1.42 - 1.2 - 0.05),  # 填满内容区剩余空间
+)
+```
+
 ### 正文页（Layout 4 双图）
 
 Layout 4 不使用 ph idx=10，两个图表区域通过坐标手动放置。
