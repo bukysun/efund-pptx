@@ -270,9 +270,9 @@ def set_slide_title(slide, text, size=23, bold=True, color=WHITE):
 
 # ── 多级正文 ─────────────────────────────────────────────────
 BODY_STYLES = {
-    0: dict(size=15, bold=True,  color=DEEP_BLUE, cn_font=CN_FONT, en_font=None),  # 一级标题
-    1: dict(size=12, bold=False, color=DARK_GRAY,  cn_font=CN_FONT, en_font=None),  # 一级文字
-    2: dict(size=10, bold=False, color=DARK_GRAY,  cn_font=CN_FONT, en_font=None),  # 二级文字
+    0: dict(size=15, bold=True,  color=DEEP_BLUE, cn_font=CN_FONT, en_font=EN_FONT),  # 一级标题
+    1: dict(size=12, bold=False, color=DARK_GRAY,  cn_font=CN_FONT, en_font=EN_FONT),  # 一级文字
+    2: dict(size=10, bold=False, color=DARK_GRAY,  cn_font=CN_FONT, en_font=EN_FONT),  # 二级文字
 }
 
 # 内容区可用高度（ph idx=10, h=2.71"）
@@ -1436,14 +1436,9 @@ WHITE       = RGBColor(255, 255, 255)   # 目录主标题、表头字体
 
 ## Font Utils
 
-> ⚠️ **核心规则：纯中文 run 必须同时设置 `a:latin` + `a:ea` + `a:cs` + `panose` + `lang`，完全匹配模板 slide 的写法。**
->
-> **原因**：`华文黑体_易方达` 是公司定制字体，在非 Windows 企业环境（如 Mac）下未安装。
-> PowerPoint 依赖 `panose` 字体指纹做回退匹配，找到系统已安装的 `华文黑体`（STHeiti）作为替代。
-> 若缺少 `a:ea` 或 `panose`，macOS Core Text 会对不同字符走不同回退路径（部分用 STHeiti，部分用 PingFang SC），
-> 导致同一行内个别字符（如"甩"、"复"）渲染风格异常。
->
-> **`a:cs` 固定使用 `华文黑体`（不带 `_易方达`），因为这是 macOS 系统已安装的字体全名。**
+> ⚠️ **核心陷阱：中文字体必须使用 `a:latin charset="-122"`，而非 `a:ea`。**
+> 模板中实际的中文 run 使用的是 `<a:latin typeface="华文黑体_易方达" charset="-122"/>`（GBK 字符集），
+> 用 `a:ea` 设置的字体在 PowerPoint 中不生效，中文会 fallback 到 Arial。
 
 ```python
 import math
@@ -1456,10 +1451,6 @@ from lxml import etree
 CN_FONT = "华文黑体_易方达"   # ⚠️ 公司定制字体，必须使用完整名称
 EN_FONT = "Arial"
 
-_CN_PANOSE    = '02010600040101010101'   # 华文黑体_易方达 字体指纹（从模板 XML 提取）
-_CN_PITCH_FAM = '2'                      # pitchFamily
-_CN_FONT_CS   = '华文黑体'              # a:cs 用系统已安装名称，确保回退一致
-
 
 def apply_font(run, cn_font=CN_FONT, en_font=EN_FONT,
                size=None, bold=None, color=None,
@@ -1467,8 +1458,11 @@ def apply_font(run, cn_font=CN_FONT, en_font=EN_FONT,
     """
     设置中文/英文/混排字体。
 
+    ⚠️ 关键规则：中文字符必须通过 a:latin charset="-122"（GBK 中文字符集）设置，
+    这是模板 slide 中实际使用的方式。a:ea 字段不被 PowerPoint 识别为中文字体覆盖。
+
     参数说明：
-        cn_font=CN_FONT, en_font=None  → 纯中文：a:latin + a:ea（均含 panose）+ a:cs（系统字体）+ lang
+        cn_font=CN_FONT, en_font=None  → 纯中文：a:latin charset=-122 + a:cs
         cn_font=None, en_font=EN_FONT  → 纯英文/数字：a:latin（无 charset）
         cn_font=CN_FONT, en_font=EN_FONT → 中英混排：a:latin=Arial + a:ea=华文黑体_易方达
         italic    : True/False，斜体（文字突出用）
@@ -1487,26 +1481,16 @@ def apply_font(run, cn_font=CN_FONT, en_font=EN_FONT,
     rPr = run._r.get_or_add_rPr()
 
     if cn_font and not en_font:
-        # 纯中文：完全匹配模板 slide XML 的写法
-        # a:latin + a:ea 均设 panose/pitchFamily，让 PowerPoint 能一致回退到 STHeiti
-        # a:cs 固定用系统已安装的 华文黑体（不带 _易方达 后缀）
-        # lang="zh-CN" 明确告知渲染引擎字符语言，指导字体替换方向
-        rPr.set('lang', 'zh-CN')
-        rPr.set('altLang', 'zh-CN')
-        for tag in ['a:latin', 'a:ea']:
-            el = rPr.find(qn(tag))
-            if el is None:
-                el = etree.SubElement(rPr, qn(tag))
-            el.set('typeface', cn_font)
-            el.set('panose', _CN_PANOSE)
-            el.set('pitchFamily', _CN_PITCH_FAM)
-            el.set('charset', '-122')
+        # 纯中文：使用 a:latin charset="-122"（GBK），匹配模板 slide 的实际做法
+        latin = rPr.find(qn('a:latin'))
+        if latin is None:
+            latin = etree.SubElement(rPr, qn('a:latin'))
+        latin.set('typeface', cn_font)
+        latin.set('charset', '-122')
         cs = rPr.find(qn('a:cs'))
         if cs is None:
             cs = etree.SubElement(rPr, qn('a:cs'))
-        cs.set('typeface', _CN_FONT_CS)
-        cs.set('panose', _CN_PANOSE)
-        cs.set('pitchFamily', _CN_PITCH_FAM)
+        cs.set('typeface', cn_font)
         cs.set('charset', '-122')
 
     elif en_font and not cn_font:
@@ -1639,7 +1623,7 @@ def add_text(tf, text, *, first=False, align=PP_ALIGN.LEFT,
 
 **表格：**
 - 使用 `add_vi_table(slide, headers, rows_data, ...)` 生成，自动处理颜色和字体
-- 表头：BRIGHT_BLUE 背景 + 白色加粗华文黑体，居中对齐
+- 表头：BRIGHT_BLUE 背景 + 白色加粗华文黑体_易方达，居中对齐
 - 正文：奇数行 PALE_GRAY / 偶数行白色交替，中部垂直对齐，内容左对齐
 - 数字/英文列传 `is_number=True` 使用 Arial 字体
 - 局部突出优先用 `bold=True`；`highlight=True` 会**强制覆盖**为 PALE_GRAY，
