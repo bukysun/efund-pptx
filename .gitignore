@@ -22,6 +22,5 @@ test_samples/
 # Preview server
 .claude/
 
-# Docs and tests (local only)
-docs/
+# Tests (local only, generated pptx)
 tests/
