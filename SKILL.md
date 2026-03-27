@@ -1638,8 +1638,14 @@ def add_text(tf, text, *, first=False, align=PP_ALIGN.LEFT,
 
 ## QA Checklist
 
+**假设输出有问题。你的工作是找出问题。**
+
+第一次渲染几乎不会完全正确。把 QA 当作 bug 排查，而不是走形式的确认步骤。如果第一次检查没发现任何问题，说明你看得不够仔细。
+
+### 第一步：内容检查
+
 ```bash
-# 1. 内容检查
+# 提取文字，检查内容完整性
 python3 -c "
 from pptx import Presentation
 from markitdown import MarkItDown
@@ -1648,16 +1654,56 @@ print(md.convert('output.pptx').text_content)
 "
 
 # 检查残留占位符
-python3 -m markitdown output.pptx | grep -iE "xxxx|lorem|ipsum"
+python3 -m markitdown output.pptx | grep -iE "xxxx|lorem|ipsum|单击此处|click.*edit"
+```
 
-# 2. 转图检查
+若 grep 返回结果，修复后再继续。
+
+### 第二步：转图检查
+
+```bash
 python3 scripts/office/soffice.py --headless --convert-to pdf output.pptx
 pdftoppm -jpeg -r 150 output.pdf slide
 ls slide-*.jpg
+
+# 快速缩略图网格（选用）
+python3 scripts/thumbnail.py output.pptx
 ```
 
-**视觉检查要点：**
-- 文字是否超出内容区边界
-- 标题/页脚/页码是否被内容遮挡
-- 左右两侧留白是否保留
-- 颜色是否符合 VI 规范
+### 第三步：视觉检查（⚠️ 使用 Subagent，哪怕只有 2-3 张幻灯片）
+
+**必须使用 subagent**——你已经盯着代码看了太久，会看到你期望的东西而不是实际存在的东西。Subagent 有全新的视角。
+
+向 subagent 发送以下 prompt（替换实际图片路径）：
+
+```
+请仔细检查以下幻灯片图片，假设存在问题——找出所有问题。
+
+检查要点（VI 规范专项）：
+- 标题文字是否显示在蓝色横幅内（白色文字不应溢出到横幅外，也不应被压缩）
+- 目录页：当前章节是否正确蓝色高亮，其余章节是否灰化（R204,G204,B204）
+- 正文区文字是否超出内容区下边界（约 y=4.13"）
+- 页码、横线、公司名称是否被内容遮挡（位于幻灯片底部，每页必须可见）
+- 左右两侧留白是否保留（约 0.40" 边距，内容不得超出参考线）
+- 封面免责声明是否存在于底部蓝色横幅中
+- 正文多节内容：节标题（蓝色加粗）与正文条目是否视觉层级清晰
+- 项目符号缩进是否一致（• 不应与文字重叠或错位）
+- 节间空白是否合理（不过密也不过大）
+- 文字框是否有截断（文字被框边界切割）
+- 元素间是否存在重叠（图片遮盖文字，标题压住内容区等）
+
+请逐张幻灯片列出发现的问题（哪怕是细微问题也要报告）：
+1. /path/to/slide-01.jpg（预期内容：封面页）
+2. /path/to/slide-02.jpg（预期内容：目录页）
+...
+```
+
+### 第四步：验证循环
+
+1. 生成幻灯片 → 转图 → 检查
+2. **列出发现的问题**（若没发现任何问题，再仔细看一遍）
+3. 修复问题
+4. **重新检查受影响的幻灯片**——修复一个问题常常引发另一个问题
+5. 重复直到全面检查后没有新问题
+
+**在完成至少一次"修复并重新验证"循环之前，不得宣告任务完成。**
