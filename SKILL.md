@@ -1181,32 +1181,42 @@ import copy
 
 
 def _set_toc_row(tr, number: str, title: str, color_hex: str):
-    """更新一行目录：序号文字 + 标题文字 + 标题颜色（操作原始 XML tr 元素）。"""
+    """更新一行目录：序号文字 + 标题文字 + 序号/标题颜色（操作原始 XML tr 元素）。
+
+    color_hex 同时控制序号和标题的颜色：
+      '005096' (DEEP_BLUE)  → 标题深蓝，序号亮蓝（1EB9E1）
+      'CCCCCC' (LIGHT_GRAY) → 标题和序号均灰化
+    """
     cells = tr.findall(qn('a:tc'))
 
-    # Col 0：序号
-    for rEl in cells[0].findall('.//' + qn('a:r')):
-        t = rEl.find(qn('a:t'))
-        if t is not None:
-            t.text = number
-
-    # Col 1：标题文字 + 颜色
-    for rEl in cells[1].findall('.//' + qn('a:r')):
-        t = rEl.find(qn('a:t'))
-        if t is not None:
-            t.text = title
+    def _apply_color(rEl, hex_val):
+        """向 run 元素写入 solidFill 颜色（insert(0) 保证在 latin/ea/cs 之前）。"""
         rPr = rEl.find(qn('a:rPr'))
         if rPr is None:
             rPr = etree.SubElement(rEl, qn('a:rPr'))
         old = rPr.find(qn('a:solidFill'))
         if old is not None:
             rPr.remove(old)
-        # ⚠️ OOXML 要求 solidFill 必须在 latin/ea/cs 之前
-        # 用 insert(0,...) 而不是 SubElement（SubElement 追加到末尾会被 PowerPoint 忽略）
         fill = etree.Element(qn('a:solidFill'))
-        srgb = etree.SubElement(fill, qn('a:srgbClr'))
-        srgb.set('val', color_hex)
+        etree.SubElement(fill, qn('a:srgbClr')).set('val', hex_val)
         rPr.insert(0, fill)
+
+    # 序号颜色：灰化时同步灰化，激活/总览时保持亮蓝（BRIGHT_BLUE = 1EB9E1）
+    num_color = color_hex if color_hex == 'CCCCCC' else '1EB9E1'
+
+    # Col 0：序号文字 + 颜色
+    for rEl in cells[0].findall('.//' + qn('a:r')):
+        t = rEl.find(qn('a:t'))
+        if t is not None:
+            t.text = number
+        _apply_color(rEl, num_color)
+
+    # Col 1：标题文字 + 颜色
+    for rEl in cells[1].findall('.//' + qn('a:r')):
+        t = rEl.find(qn('a:t'))
+        if t is not None:
+            t.text = title
+        _apply_color(rEl, color_hex)
 
 
 def fill_toc_table(tbl, chapters: list[str], active_idx):
