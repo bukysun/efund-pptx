@@ -1044,6 +1044,11 @@ def add_toc_slide(prs, toc_table_xml, chapters: list[str], active_idx=None):
         chapters      : 章节标题列表（最多 7 项）
         active_idx    : 当前高亮章节的 0-based 索引；None → 全部章节蓝色（总览页）
     """
+    if toc_table_xml is None:
+        raise ValueError(
+            "toc_table_xml 为 None —— 必须在删除 slides 之前提取，见 Quick Start 提取步骤。"
+            "常见错误：把 'while len(prs.slides) > 0' 的清空操作放在了提取之前。"
+        )
     slide = prs.slides.add_slide(prs.slide_layouts[1])
 
     # 将克隆的表格 XML 挂到 slide 的 shape tree
@@ -1073,11 +1078,14 @@ chapters = [
 # ① 演示文稿开头：总览目录页，全部章节蓝色
 add_toc_slide(prs, toc_table_xml, chapters)           # active_idx=None（默认）
 
-# ② 每章正文前：章节跳转页，当前章节高亮，其余灰化
-# ⚠️ 必须为每个章节生成一张跳转页，不可只有总览目录页
-for i in range(len(chapters)):
-    add_toc_slide(prs, toc_table_xml, chapters, active_idx=i)
-    # ... 此章节的正文页 ...
+# ② 每章正文前：章节跳转页 + 本章正文，必须穿插，不可批量
+# ⚠️ 错误示范：先生成所有跳转页，再生成所有正文 —— 会导致目录页扎堆
+# ✅ 正确示范：每章跳转页紧跟本章正文，循环内同时生成
+for i, chapter in enumerate(chapters):
+    add_toc_slide(prs, toc_table_xml, chapters, active_idx=i)  # 章节跳转页
+    # 紧接着生成本章的正文页，不要移到循环外
+    add_layout3_slide(prs, title="...", body_items=[...])       # 本章第一页
+    # add_layout3_slide(prs, ...)                               # 本章更多页 ...
 ```
 
 ### 封底页
